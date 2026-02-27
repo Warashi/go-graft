@@ -45,3 +45,31 @@ type MutationPoint struct {
 	PackageName    string
 	CompiledGoFile string
 }
+
+type Mutant struct {
+	ID            string
+	RuleName      string
+	Point         MutationPoint
+	TempDir       string
+	OverlayPath   string
+	OverlayTmpDir string
+	MutantFile    string
+	ReplaceMap    map[string]string
+}
+
+type SelectedTests struct {
+	ByImportPath map[string][]string
+}
+
+type MutantExecResult struct {
+	Mutant         Mutant
+	Status         int
+	Reason         string
+	ExecutedPkgs   map[string]string
+	FailedCommand  []string
+	Stdout         string
+	Stderr         string
+	TimedOut       bool
+	ElapsedNsec    int64
+	InternalErrMsg string
+}
