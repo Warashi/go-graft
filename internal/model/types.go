@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+
+	"golang.org/x/tools/go/packages"
 )
 
 type Package struct {
@@ -17,6 +19,7 @@ type Package struct {
 	Syntax          []*ast.File
 	SyntaxByPath    map[string]*ast.File
 	TypesInfo       *types.Info
+	Raw             *packages.Package
 }
 
 type Project struct {

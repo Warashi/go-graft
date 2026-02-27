@@ -1,43 +1,19 @@
 package projectload
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
-	"io"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/Warashi/go-graft/internal/model"
+	"golang.org/x/tools/go/packages"
 )
 
 type Loader struct {
 	Dir string
-}
-
-type goListPackage struct {
-	ID              string
-	ImportPath      string
-	Dir             string
-	GoFiles         []string
-	TestGoFiles     []string
-	XTestGoFiles    []string
-	CompiledGoFiles []string
-	Imports         []string
-	Module          *struct {
-		Path string
-		Main bool
-	}
-	Error *struct {
-		Err string
-	}
 }
 
 func (l Loader) Load(ctx context.Context, patterns ...string) (*model.Project, error) {
@@ -45,119 +21,149 @@ func (l Loader) Load(ctx context.Context, patterns ...string) (*model.Project, e
 		patterns = []string{"./..."}
 	}
 
-	args := append([]string{"list", "-deps", "-test", "-json"}, patterns...)
-	cmd := exec.CommandContext(ctx, "go", args...)
-	if l.Dir != "" {
-		cmd.Dir = l.Dir
+	cfg := &packages.Config{
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedCompiledGoFiles |
+			packages.NeedSyntax |
+			packages.NeedTypes |
+			packages.NeedTypesInfo |
+			packages.NeedImports |
+			packages.NeedDeps |
+			packages.NeedModule,
+		Tests:   true,
+		Dir:     l.Dir,
+		Context: ctx,
 	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("go list failed: %w: %s", err, strings.TrimSpace(stderr.String()))
+	loaded, err := packages.Load(cfg, patterns...)
+	if err != nil {
+		return nil, fmt.Errorf("go/packages load failed: %w", err)
 	}
-
-	decoder := json.NewDecoder(&stdout)
-	rawPkgs := make([]goListPackage, 0, 128)
-	for {
-		var pkg goListPackage
-		err := decoder.Decode(&pkg)
-		if errors.Is(err, context.Canceled) {
-			return nil, err
-		}
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("decode go list json: %w", err)
-		}
-		if pkg.Error != nil {
-			return nil, fmt.Errorf("go list package error for %s: %s", pkg.ImportPath, pkg.Error.Err)
-		}
-		rawPkgs = append(rawPkgs, pkg)
+	if err := collectLoadErrors(loaded); err != nil {
+		return nil, err
 	}
 
 	project := &model.Project{
-		ByID:         make(map[string]*model.Package, len(rawPkgs)),
-		ByImportPath: make(map[string]*model.Package, len(rawPkgs)),
+		ByID:         make(map[string]*model.Package, len(loaded)),
+		ByImportPath: make(map[string]*model.Package, len(loaded)),
 	}
 
-	for _, raw := range rawPkgs {
-		if raw.Module == nil || !raw.Module.Main {
+	for _, pkg := range loaded {
+		if pkg == nil || pkg.Module == nil || !pkg.Module.Main {
 			continue
 		}
-		pkg, err := buildPackage(raw)
-		if err != nil {
-			return nil, err
-		}
-		if pkg == nil {
+		converted := buildPackage(pkg)
+		if converted == nil {
 			continue
 		}
-		project.Packages = append(project.Packages, pkg)
-		project.ByID[pkg.ID] = pkg
-		if _, ok := project.ByImportPath[pkg.ImportPath]; !ok {
-			project.ByImportPath[pkg.ImportPath] = pkg
+		project.Packages = append(project.Packages, converted)
+		project.ByID[converted.ID] = converted
+		if _, ok := project.ByImportPath[converted.ImportPath]; !ok {
+			project.ByImportPath[converted.ImportPath] = converted
 		}
 	}
 
 	return project, nil
 }
 
-func buildPackage(raw goListPackage) (*model.Package, error) {
-	if raw.Dir == "" {
-		return nil, nil
+func buildPackage(pkg *packages.Package) *model.Package {
+	goFiles := cleanAbsPaths(pkg.GoFiles, pkg.Dir)
+	compiledGoFiles := cleanAbsPaths(pkg.CompiledGoFiles, pkg.Dir)
+	if len(goFiles) == 0 && len(compiledGoFiles) == 0 {
+		return nil
 	}
 
-	srcFiles := combineUniqueFiles(raw.Dir, raw.GoFiles, raw.TestGoFiles, raw.XTestGoFiles)
-	compiledFiles := combineUniqueFiles(raw.Dir, raw.CompiledGoFiles)
-	if len(srcFiles) == 0 && len(compiledFiles) == 0 {
-		return nil, nil
-	}
-
-	fset := token.NewFileSet()
-	syntax := make([]*ast.File, 0, len(srcFiles))
-	syntaxByPath := make(map[string]*ast.File, len(srcFiles))
-	for _, file := range srcFiles {
-		node, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
-		if err != nil {
-			return nil, fmt.Errorf("parse file %s: %w", file, err)
+	syntax := append([]*ast.File(nil), pkg.Syntax...)
+	syntaxByPath := make(map[string]*ast.File, len(syntax))
+	for _, file := range syntax {
+		if file == nil || pkg.Fset == nil {
+			continue
 		}
-		syntax = append(syntax, node)
-		syntaxByPath[file] = node
+		pos := pkg.Fset.Position(file.Pos())
+		if pos.Filename == "" {
+			continue
+		}
+		filePath := filepath.Clean(pos.Filename)
+		if !filepath.IsAbs(filePath) && pkg.Dir != "" {
+			filePath = filepath.Join(pkg.Dir, filePath)
+		}
+		filePath = filepath.Clean(filePath)
+		syntaxByPath[filePath] = file
+	}
+
+	imports := make([]string, 0, len(pkg.Imports))
+	for importPath := range pkg.Imports {
+		imports = append(imports, importPath)
+	}
+	slices.Sort(imports)
+
+	importPath := pkg.PkgPath
+	if importPath == "" {
+		importPath = pkg.ID
 	}
 
 	return &model.Package{
-		ID:              raw.ID,
-		ImportPath:      raw.ImportPath,
-		Dir:             raw.Dir,
-		GoFiles:         srcFiles,
-		CompiledGoFiles: compiledFiles,
-		Imports:         append([]string(nil), raw.Imports...),
-		Fset:            fset,
+		ID:              pkg.ID,
+		ImportPath:      importPath,
+		Dir:             pkg.Dir,
+		GoFiles:         goFiles,
+		CompiledGoFiles: compiledGoFiles,
+		Imports:         imports,
+		Fset:            pkg.Fset,
 		Syntax:          syntax,
 		SyntaxByPath:    syntaxByPath,
-	}, nil
+		TypesInfo:       pkg.TypesInfo,
+		Raw:             pkg,
+	}
 }
 
-func combineUniqueFiles(dir string, groups ...[]string) []string {
-	seen := make(map[string]struct{})
-	out := make([]string, 0)
-	for _, group := range groups {
-		for _, file := range group {
-			path := file
-			if !filepath.IsAbs(path) {
-				path = filepath.Join(dir, path)
-			}
-			path = filepath.Clean(path)
-			if _, ok := seen[path]; ok {
-				continue
-			}
-			seen[path] = struct{}{}
-			out = append(out, path)
+func cleanAbsPaths(paths []string, dir string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if path == "" {
+			continue
 		}
+		cleaned := filepath.Clean(path)
+		if !filepath.IsAbs(cleaned) && dir != "" {
+			cleaned = filepath.Join(dir, cleaned)
+		}
+		cleaned = filepath.Clean(cleaned)
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		out = append(out, cleaned)
 	}
 	slices.Sort(out)
 	return out
+}
+
+func collectLoadErrors(pkgs []*packages.Package) error {
+	seen := make(map[string]struct{})
+	var lines []string
+	for _, pkg := range pkgs {
+		if pkg == nil {
+			continue
+		}
+		for _, loadErr := range pkg.Errors {
+			msg := strings.TrimSpace(loadErr.Error())
+			if msg == "" {
+				continue
+			}
+			if _, ok := seen[msg]; ok {
+				continue
+			}
+			seen[msg] = struct{}{}
+			lines = append(lines, msg)
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	slices.Sort(lines)
+	return fmt.Errorf("go/packages load errors:\n%s", strings.Join(lines, "\n"))
 }
