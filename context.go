@@ -4,19 +4,14 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-)
 
-// PackageInfo describes a package while a rule callback is running.
-type PackageInfo struct {
-	ID         string
-	ImportPath string
-	Dir        string
-}
+	"golang.org/x/tools/go/packages"
+)
 
 // Context is passed to each rule callback.
 type Context struct {
 	Fset  *token.FileSet
-	Pkg   PackageInfo
+	Pkg   *packages.Package
 	File  *ast.File
 	Types *types.Info
 	Path  []ast.Node

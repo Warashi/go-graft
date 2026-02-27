@@ -86,11 +86,7 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 			callbackCtx := newContext()
 			if pkg != nil {
 				callbackCtx.Fset = pkg.Fset
-				callbackCtx.Pkg = PackageInfo{
-					ID:         pkg.ID,
-					ImportPath: pkg.ImportPath,
-					Dir:        pkg.Dir,
-				}
+				callbackCtx.Pkg = pkg.Raw
 				callbackCtx.Types = pkg.TypesInfo
 			}
 			callbackCtx.File = point.File
