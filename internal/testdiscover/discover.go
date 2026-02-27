@@ -2,6 +2,7 @@ package testdiscover
 
 import (
 	"go/ast"
+	"go/types"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -27,7 +28,7 @@ func Discover(project *model.Project) []model.TestRef {
 				if !ok {
 					continue
 				}
-				if !isTopLevelTest(fn, testingAliases) {
+				if !isTopLevelTest(fn, testingAliases, pkg.TypesInfo) {
 					continue
 				}
 				out = append(out, model.TestRef{
@@ -43,7 +44,7 @@ func Discover(project *model.Project) []model.TestRef {
 	return out
 }
 
-func isTopLevelTest(fn *ast.FuncDecl, testingAliases map[string]struct{}) bool {
+func isTopLevelTest(fn *ast.FuncDecl, testingAliases map[string]struct{}, typesInfo *types.Info) bool {
 	if fn == nil || fn.Name == nil || fn.Recv != nil || fn.Type == nil || fn.Type.Params == nil {
 		return false
 	}
@@ -56,7 +57,7 @@ func isTopLevelTest(fn *ast.FuncDecl, testingAliases map[string]struct{}) bool {
 	if len(fn.Type.Params.List[0].Names) > 1 {
 		return false
 	}
-	return isPointerToTestingT(fn.Type.Params.List[0].Type, testingAliases)
+	return isPointerToTestingT(fn.Type.Params.List[0].Type, testingAliases, typesInfo)
 }
 
 func looksLikeTestName(name string) bool {
@@ -71,7 +72,11 @@ func looksLikeTestName(name string) bool {
 	return !unicode.IsLower(r)
 }
 
-func isPointerToTestingT(expr ast.Expr, testingAliases map[string]struct{}) bool {
+func isPointerToTestingT(expr ast.Expr, testingAliases map[string]struct{}, typesInfo *types.Info) bool {
+	if isPointerToTestingTByTypes(expr, typesInfo) {
+		return true
+	}
+
 	star, ok := expr.(*ast.StarExpr)
 	if !ok {
 		return false
@@ -89,6 +94,26 @@ func isPointerToTestingT(expr ast.Expr, testingAliases map[string]struct{}) bool
 	}
 	_, ok = testingAliases[pkgIdent.Name]
 	return ok
+}
+
+func isPointerToTestingTByTypes(expr ast.Expr, info *types.Info) bool {
+	if info == nil || expr == nil {
+		return false
+	}
+	typ := types.Unalias(info.TypeOf(expr))
+	ptr, ok := typ.(*types.Pointer)
+	if !ok {
+		return false
+	}
+	named, ok := types.Unalias(ptr.Elem()).(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	if obj == nil || obj.Pkg() == nil {
+		return false
+	}
+	return obj.Pkg().Path() == "testing" && obj.Name() == "T"
 }
 
 func testingImportAliases(file *ast.File) map[string]struct{} {
