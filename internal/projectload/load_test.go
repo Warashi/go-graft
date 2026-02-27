@@ -24,7 +24,14 @@ func TestLoaderLoadIncludesTestFilesAndAbsolutePaths(t *testing.T) {
 	}
 
 	var hasCalc, hasCalcTest, hasExternal bool
+	var hasRaw, hasTypesInfo bool
 	for _, pkg := range project.Packages {
+		if pkg.Raw != nil {
+			hasRaw = true
+		}
+		if pkg.TypesInfo != nil {
+			hasTypesInfo = true
+		}
 		for _, file := range pkg.GoFiles {
 			if !filepath.IsAbs(file) {
 				t.Fatalf("GoFiles path is not absolute: %s", file)
@@ -43,10 +50,21 @@ func TestLoaderLoadIncludesTestFilesAndAbsolutePaths(t *testing.T) {
 				t.Fatalf("CompiledGoFiles path is not absolute: %s", file)
 			}
 		}
+		for key := range pkg.SyntaxByPath {
+			if !filepath.IsAbs(key) {
+				t.Fatalf("SyntaxByPath key is not absolute: %s", key)
+			}
+		}
 	}
 
 	if !hasCalc || !hasCalcTest || !hasExternal {
 		t.Fatalf("missing files: calc=%v calc_test=%v external_test=%v", hasCalc, hasCalcTest, hasExternal)
+	}
+	if !hasRaw {
+		t.Fatal("expected at least one package with Raw package data")
+	}
+	if !hasTypesInfo {
+		t.Fatal("expected at least one package with TypesInfo")
 	}
 }
 
