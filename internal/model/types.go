@@ -50,11 +50,13 @@ type Mutant struct {
 	ID            string
 	RuleName      string
 	Point         MutationPoint
+	WorkDir       string
 	TempDir       string
 	OverlayPath   string
 	OverlayTmpDir string
 	MutantFile    string
 	ReplaceMap    map[string]string
+	SelectedTests SelectedTests
 }
 
 type SelectedTests struct {
@@ -63,7 +65,7 @@ type SelectedTests struct {
 
 type MutantExecResult struct {
 	Mutant         Mutant
-	Status         int
+	Status         MutantStatus
 	Reason         string
 	ExecutedPkgs   map[string]string
 	FailedCommand  []string
@@ -73,3 +75,12 @@ type MutantExecResult struct {
 	ElapsedNsec    int64
 	InternalErrMsg string
 }
+
+type MutantStatus int
+
+const (
+	MutantKilled MutantStatus = iota
+	MutantSurvived
+	MutantUnsupported
+	MutantErrored
+)
