@@ -31,7 +31,11 @@ type goListPackage struct {
 	XTestGoFiles    []string
 	CompiledGoFiles []string
 	Imports         []string
-	Error           *struct {
+	Module          *struct {
+		Path string
+		Main bool
+	}
+	Error *struct {
 		Err string
 	}
 }
@@ -81,6 +85,9 @@ func (l Loader) Load(ctx context.Context, patterns ...string) (*model.Project, e
 	}
 
 	for _, raw := range rawPkgs {
+		if raw.Module == nil || !raw.Module.Main {
+			continue
+		}
 		pkg, err := buildPackage(raw)
 		if err != nil {
 			return nil, err

@@ -8,6 +8,11 @@ import (
 
 var ErrUnsupportedNode = errors.New("astcow: unsupported node type")
 
+// ShallowCopyNode returns a one-level copy for supported node types.
+func ShallowCopyNode(n ast.Node) ast.Node {
+	return shallowCopy(n)
+}
+
 // ClonePath applies one-node mutation with copy-on-write on the given path.
 func ClonePath(pathOrig []ast.Node, nodeOrig ast.Node, nodeMut ast.Node) (*ast.File, map[ast.Node]ast.Node, error) {
 	if len(pathOrig) == 0 {
