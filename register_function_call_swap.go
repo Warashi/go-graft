@@ -123,9 +123,6 @@ func parsePackageFunctionName(runtimeName string) (pkgPath string, functionName 
 	if !found || pkgElem == "" || rawName == "" {
 		return "", "", false
 	}
-	if strings.ContainsAny(rawName, ".()") {
-		return "", "", false
-	}
 
 	funcName, typeArgTail, hasTypeArgs := strings.Cut(rawName, "[")
 	if hasTypeArgs {
@@ -133,6 +130,9 @@ func parsePackageFunctionName(runtimeName string) (pkgPath string, functionName 
 			return "", "", false
 		}
 		rawName = funcName
+	}
+	if strings.ContainsAny(rawName, ".()") {
+		return "", "", false
 	}
 
 	if rawName == "" || !token.IsIdentifier(rawName) {
