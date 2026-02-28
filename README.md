@@ -85,6 +85,17 @@ This is intentionally separated from `Survived` to avoid false confidence.
 
 Set `Config{KeepTemp: true}` and inspect temporary mutant directories and command output.
 
+### How is the test-selection call graph chosen?
+
+Use `Config{TestSelectionCallGraph: ...}`:
+
+- `auto` (default): `rta -> cha -> ast`
+- `rta`: `rta -> cha -> ast`
+- `cha`: `cha -> ast`
+- `ast`: AST-only analysis
+
+When a backend cannot be used safely, go-graft falls back to the next backend and keeps the "no candidate => all discovered tests" safety rule.
+
 ## Design docs
 
 - [Current architecture summary](docs/design-summary.md)

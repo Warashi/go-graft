@@ -26,7 +26,13 @@ The engine runs the following pipeline:
    - Uses path cloning (`internal/astcow`) to replace one node without mutating the original AST.
    - Writes a mutated file, temp workspace, and `overlay.json`.
 5. `internal/testselect`
+   - Builds one selector per engine run and reuses it for all mutation points.
    - Finds candidate tests by reverse caller reachability from the enclosing function.
+   - Uses configurable call graph backends:
+     - `auto` (default): `rta -> cha -> ast`
+     - `rta`: `rta -> cha -> ast`
+     - `cha`: `cha -> ast`
+     - `ast`: AST-only
    - Falls back to all discovered tests when reachability yields no tests.
    - Prunes by reverse package dependencies from the mutant package.
 6. `internal/runner`
@@ -70,6 +76,6 @@ Each mutant is classified as exactly one of:
 
 ## Practical Constraints
 
-- Test call reachability is based on AST-level call resolution and is conservative.
-- Dynamic behavior (reflection, runtime dispatch patterns, complex indirection) may not be fully captured.
-- Reliability is prioritized over aggressive pruning; when uncertain, the tool can expand selection or return `Unsupported` instead of reporting a risky `Survived`.
+- Test call reachability uses `RTA`/`CHA`/`AST` with safe fallback chain; `AST` remains the final fallback.
+- Dynamic behavior (reflection, runtime dispatch patterns, complex indirection) may still reduce precision.
+- Reliability is prioritized over aggressive pruning; when uncertain, the tool expands selection instead of reporting a risky `Survived`.

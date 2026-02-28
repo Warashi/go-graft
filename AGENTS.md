@@ -16,6 +16,7 @@ Do not place user-level global preferences or rules for other projects here.
 - Execution statuses are handled separately as `Killed`, `Survived`, `Unsupported`, and `Errored`.
 - Test execution is handled by `internal/runner`, which runs `go test` with `-overlay`, `-failfast`, `-parallel=1`, and `-count=1`.
 - `internal/testdiscover` extracts regular tests and auto-excludes mutation tests that can reach `(*graft.Engine).Run`. This can be overridden with `//gograft:include` and `//gograft:exclude` directives.
+- `internal/testselect` builds one selector per run. Default call graph mode is `auto` and resolves with fallback chain `rta -> cha -> ast` (`rta`/`cha`/`ast` can also be forced by config).
 - The core flow is split by responsibility as:
   `internal/projectload` -> `internal/testdiscover` -> `internal/mutationpoint` -> `internal/mutantbuild` -> `internal/testselect` -> `internal/runner` -> `internal/reporting`.
 

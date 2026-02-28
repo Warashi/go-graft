@@ -28,7 +28,17 @@ type Config struct {
     MutantTimeout time.Duration
     BaseTempDir   string
     KeepTemp      bool
+    TestSelectionCallGraph TestSelectionCallGraphMode
 }
+
+type TestSelectionCallGraphMode string
+
+const (
+    TestSelectionCallGraphAuto TestSelectionCallGraphMode = "auto"
+    TestSelectionCallGraphRTA  TestSelectionCallGraphMode = "rta"
+    TestSelectionCallGraphCHA  TestSelectionCallGraphMode = "cha"
+    TestSelectionCallGraphAST  TestSelectionCallGraphMode = "ast"
+)
 
 type Engine struct {
     Config Config
@@ -42,6 +52,7 @@ Defaulting behavior:
 
 - `Workers <= 0` -> `1`
 - `MutantTimeout <= 0` -> `30s`
+- `TestSelectionCallGraph` invalid/empty -> `auto`
 
 ### 2.2 Rule registration
 
@@ -219,12 +230,17 @@ Responsibilities:
 
 Responsibilities:
 
-1. Build reverse callers from AST-level call inspection.
-2. Use mutation-point enclosing function as reachability seed.
-3. Collect candidate tests reachable through reverse calls.
-4. Fallback to all discovered tests when no candidate is found.
-5. Prune candidates by reverse package dependencies from mutant package.
-6. Group selected tests as `map[importPath][]testName` with sorted unique names.
+1. Build one selector at `Engine.Run` start and reuse it for all mutation points.
+2. Resolve one backend chain from `Config.TestSelectionCallGraph`:
+   - `auto`: `rta -> cha -> ast`
+   - `rta`: `rta -> cha -> ast`
+   - `cha`: `cha -> ast`
+   - `ast`: `ast`
+3. Use mutation-point enclosing function as reachability seed.
+4. Collect candidate tests reachable through reverse calls.
+5. Fallback to all discovered tests when no candidate is found.
+6. Prune candidates by reverse package dependencies from mutant package.
+7. Group selected tests as `map[importPath][]testName` with sorted unique names.
 
 Design choice:
 
@@ -282,7 +298,7 @@ Important rule:
 
 ## 6. Current Limitations
 
-- Call analysis for test selection is AST-based and conservative.
+- Call analysis prefers RTA/CHA but may still fall back to AST when deeper analysis cannot be safely built.
 - Dynamic behaviors (reflection, advanced indirection patterns, complex dispatch) can reduce precision.
 - `WithDeepCopy()` is not yet behaviorally applied in the execution pipeline.
 - Mutation is limited to one-node replacement per generated mutant.
@@ -290,6 +306,7 @@ Important rule:
 ## 7. Debug and Development Notes
 
 - Set `GO_GRAFT_DEBUG` to print mutation-test auto-exclusion details.
+- `GO_GRAFT_DEBUG` also prints the selected test-selection call graph backend and fallback reasons.
 - Set `Config{KeepTemp: true}` to keep mutant temp directories for reproduction/debugging.
 - Standard repository checks:
   - `go vet ./...`

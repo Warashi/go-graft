@@ -25,8 +25,12 @@ This prevents dogfooding mutation tests from recursively invoking the engine unl
 
 For each mutation point:
 
-1. Build a reverse caller graph from AST call expressions.
-2. Use the enclosing function of the mutation point as the seed.
+1. Build one selector per engine run with a configured backend chain:
+   - `auto` (default): `rta -> cha -> ast`
+   - `rta`: `rta -> cha -> ast`
+   - `cha`: `cha -> ast`
+   - `ast`: AST only
+2. Use the enclosing function of the mutation point as the reachability seed.
 3. Walk reverse callers to collect reachable tests.
 
 If no tests are found through this graph, selection falls back to all discovered tests.
@@ -53,7 +57,7 @@ If no package/test entries remain, runner reports the mutant as `Unsupported` wi
 
 ## Tradeoffs and Limits
 
-- No CHA/RTA/PTA/SSA-based call graph is used in the current implementation.
-- Call resolution is AST-based (`Ident` and imported `SelectorExpr`) and intentionally simple.
-- Dynamic dispatch patterns can still reduce precision.
+- RTA/CHA setup can fail on some package shapes; selector then falls back to the next backend and eventually AST.
+- AST call resolution remains intentionally simple (`Ident` and imported `SelectorExpr`) and is used as final fallback.
+- Dynamic dispatch patterns can still reduce precision even with CHA/RTA.
 - To avoid risky false confidence, the implementation prefers fallback expansion or `Unsupported` over claiming `Survived` on weak evidence.
