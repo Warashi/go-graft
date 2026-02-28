@@ -196,6 +196,90 @@ func TestEngineRunSkipsMutationsInTestFiles(t *testing.T) {
 	}
 }
 
+func TestEngineRunCallGraphModeChangesSelectedTests(t *testing.T) {
+	moduleDir := t.TempDir()
+	writeModuleFile(t, moduleDir, "go.mod", "module example.com/m\n\ngo 1.26.0\n")
+	writeModuleFile(t, moduleDir, "p/p.go", `package p
+type worker interface {
+	Do() int
+}
+type impl struct{}
+func (impl) Do() int { return 1 + 0 }
+func target() int {
+	var w worker = impl{}
+	return w.Do()
+}
+func Touch() int { return target() }
+`)
+	writeModuleFile(t, moduleDir, "p/p_test.go", `package p
+import "testing"
+func TestReachable(t *testing.T) {
+	if Touch() != 1 {
+		t.Fatal("bad")
+	}
+}
+func TestUnrelated(t *testing.T) {}
+`)
+
+	astReport := runEngineWithCallGraphMode(t, moduleDir, TestSelectionCallGraphAST)
+	chaReport := runEngineWithCallGraphMode(t, moduleDir, TestSelectionCallGraphCHA)
+	autoReport := runEngineWithCallGraphMode(t, moduleDir, TestSelectionCallGraphAuto)
+
+	const pkg = "example.com/m/p"
+	astPattern := findRunPattern(astReport, pkg)
+	chaPattern := findRunPattern(chaReport, pkg)
+	autoPattern := findRunPattern(autoReport, pkg)
+
+	if astPattern != "^(TestReachable|TestUnrelated)$" {
+		t.Fatalf("ast run pattern = %q, want ^(TestReachable|TestUnrelated)$", astPattern)
+	}
+	if chaPattern != "^(TestReachable)$" {
+		t.Fatalf("cha run pattern = %q, want ^(TestReachable)$", chaPattern)
+	}
+	if autoPattern != chaPattern {
+		t.Fatalf("auto run pattern = %q, want %q", autoPattern, chaPattern)
+	}
+}
+
+func runEngineWithCallGraphMode(t *testing.T, moduleDir string, mode TestSelectionCallGraphMode) *Report {
+	t.Helper()
+	e := New(Config{
+		Workers:                1,
+		MutantTimeout:          5 * time.Second,
+		TestSelectionCallGraph: mode,
+	})
+	Register[*ast.BinaryExpr](e, func(_ *Context, n *ast.BinaryExpr) (*ast.BinaryExpr, bool) {
+		if n.Op != token.ADD {
+			return nil, false
+		}
+		n.Op = token.SUB
+		return n, true
+	}, WithName("add-to-sub"))
+
+	report := runInDir(t, moduleDir, func() (*Report, error) {
+		return e.Run(context.Background(), "./...")
+	})
+	if report.Total == 0 {
+		t.Fatalf("total = %d, want > 0 (report=%+v)", report.Total, report)
+	}
+	return report
+}
+
+func findRunPattern(report *Report, pkg string) string {
+	if report == nil {
+		return ""
+	}
+	for _, mutant := range report.Mutants {
+		for _, executed := range mutant.Executed {
+			if executed.ImportPath != pkg {
+				continue
+			}
+			return executed.RunPattern
+		}
+	}
+	return ""
+}
+
 func runInDir(t *testing.T, dir string, fn func() (*Report, error)) *Report {
 	t.Helper()
 	prev, err := os.Getwd()

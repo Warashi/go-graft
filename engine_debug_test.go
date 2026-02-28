@@ -2,10 +2,12 @@ package graft
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/testdiscover"
+	"github.com/Warashi/go-graft/internal/testselect"
 )
 
 func TestDebugEnabled(t *testing.T) {
@@ -55,5 +57,39 @@ func TestWriteExcludedMutationTestsDebug(t *testing.T) {
 		"go-graft debug: excluded test example.com/b.TestB reason=directive-exclude\n"
 	if got != want {
 		t.Fatalf("writeExcludedMutationTestsDebug() = %q, want %q", got, want)
+	}
+}
+
+func TestWriteTestSelectionCallGraphDebug(t *testing.T) {
+	project := &model.Project{
+		Packages: []*model.Package{
+			{
+				ID:         "p",
+				ImportPath: "example.com/p",
+			},
+		},
+	}
+	tests := []model.TestRef{
+		{
+			PkgID:      "p",
+			ImportPath: "example.com/p",
+			Name:       "TestP",
+		},
+	}
+	selector := testselect.NewSelectorWithOptions(project, tests, testselect.SelectorOptions{
+		CallGraphMode: testselect.CallGraphModeRTA,
+	})
+
+	var buf bytes.Buffer
+	writeTestSelectionCallGraphDebug(&buf, selector)
+	got := buf.String()
+	if !strings.Contains(got, "go-graft debug: test selection callgraph backend=ast\n") {
+		t.Fatalf("missing backend line in %q", got)
+	}
+	if !strings.Contains(got, "go-graft debug: test selection callgraph fallback=rta:") {
+		t.Fatalf("missing rta fallback line in %q", got)
+	}
+	if !strings.Contains(got, "go-graft debug: test selection callgraph fallback=cha:") {
+		t.Fatalf("missing cha fallback line in %q", got)
 	}
 }

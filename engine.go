@@ -64,6 +64,12 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 		writeExcludedMutationTestsDebug(os.Stderr, discovered.Excluded)
 	}
 	tests := discovered.Included
+	selector := testselect.NewSelectorWithOptions(project, tests, testselect.SelectorOptions{
+		CallGraphMode: mapCallGraphMode(e.Config.TestSelectionCallGraph),
+	})
+	if debugEnabled() {
+		writeTestSelectionCallGraphDebug(os.Stderr, selector)
+	}
 	points := mutationpoint.Collect(project, registry.targetTypes())
 
 	builder := mutantbuild.Builder{BaseTempDir: e.Config.BaseTempDir}
@@ -128,7 +134,7 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 				continue
 			}
 			mutant.WorkDir = workDir
-			mutant.SelectedTests = testselect.Select(project, tests, point)
+			mutant.SelectedTests = selector.Select(point)
 			runMutants = append(runMutants, *mutant)
 		}
 	}
@@ -283,6 +289,19 @@ func debugEnabled() bool {
 	}
 }
 
+func mapCallGraphMode(mode TestSelectionCallGraphMode) testselect.CallGraphMode {
+	switch mode.withDefault() {
+	case TestSelectionCallGraphRTA:
+		return testselect.CallGraphModeRTA
+	case TestSelectionCallGraphCHA:
+		return testselect.CallGraphModeCHA
+	case TestSelectionCallGraphAST:
+		return testselect.CallGraphModeAST
+	default:
+		return testselect.CallGraphModeAuto
+	}
+}
+
 func writeExcludedMutationTestsDebug(w io.Writer, excluded []testdiscover.ExcludedTest) {
 	if w == nil || len(excluded) == 0 {
 		return
@@ -299,5 +318,19 @@ func writeExcludedMutationTestsDebug(w io.Writer, excluded []testdiscover.Exclud
 	})
 	for _, item := range items {
 		fmt.Fprintf(w, "go-graft debug: excluded test %s.%s reason=%s\n", item.Ref.ImportPath, item.Ref.Name, item.Reason)
+	}
+}
+
+func writeTestSelectionCallGraphDebug(w io.Writer, selector *testselect.Selector) {
+	if w == nil || selector == nil {
+		return
+	}
+	backend := selector.ResolvedBackend()
+	if backend == "" {
+		return
+	}
+	fmt.Fprintf(w, "go-graft debug: test selection callgraph backend=%s\n", backend)
+	for _, failure := range selector.BuildFailures() {
+		fmt.Fprintf(w, "go-graft debug: test selection callgraph fallback=%s\n", failure)
 	}
 }
