@@ -13,6 +13,60 @@ func ShallowCopyNode(n ast.Node) ast.Node {
 	return shallowCopy(n)
 }
 
+// DeepCopyNode returns a deep copy of n and clone-to-original mapping.
+func DeepCopyNode(n ast.Node) (ast.Node, map[ast.Node]ast.Node, error) {
+	if n == nil {
+		return nil, nil, errors.New("astcow: node must not be nil")
+	}
+
+	cloneToOriginal := make(map[ast.Node]ast.Node)
+	originalToClone := make(map[ast.Node]ast.Node)
+	var rootClone ast.Node
+	var walkErr error
+
+	ast.PreorderStack(n, nil, func(current ast.Node, stack []ast.Node) bool {
+		if walkErr != nil {
+			return false
+		}
+
+		cloned, seen := originalToClone[current]
+		if !seen {
+			cloned = shallowCopy(current)
+			if cloned == nil {
+				walkErr = fmt.Errorf("%w: %T", ErrUnsupportedNode, current)
+				return false
+			}
+			originalToClone[current] = cloned
+			cloneToOriginal[cloned] = current
+		}
+
+		if len(stack) == 0 {
+			rootClone = cloned
+			return !seen
+		}
+
+		parentOrig := stack[len(stack)-1]
+		parentClone, ok := originalToClone[parentOrig]
+		if !ok {
+			walkErr = fmt.Errorf("astcow: missing parent clone for %T", parentOrig)
+			return false
+		}
+		if !replaceChild(parentClone, current, cloned) {
+			walkErr = fmt.Errorf("astcow: failed to replace child %T in %T", current, parentOrig)
+			return false
+		}
+		return !seen
+	})
+
+	if walkErr != nil {
+		return nil, nil, walkErr
+	}
+	if rootClone == nil {
+		return nil, nil, errors.New("astcow: failed to clone root")
+	}
+	return rootClone, cloneToOriginal, nil
+}
+
 // ClonePath applies one-node mutation with copy-on-write on the given path.
 func ClonePath(pathOrig []ast.Node, nodeOrig ast.Node, nodeMut ast.Node) (*ast.File, map[ast.Node]ast.Node, error) {
 	if len(pathOrig) == 0 {
