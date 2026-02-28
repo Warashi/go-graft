@@ -56,7 +56,6 @@ body:
       description: Command(s) you ran when reproducing this issue.
       placeholder: |
         go test ./...
-        go-graft ./...
     validations:
       required: true
 

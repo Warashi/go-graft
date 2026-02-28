@@ -25,7 +25,7 @@ go test ./...
 2. Keep commits small and use [Conventional Commits](https://www.conventionalcommits.org/).
 3. Add or update tests when behavior changes.
 4. Run `go vet ./...` and `go test ./...` before opening a PR.
-5. Update docs when public behavior or CLI behavior changes.
+5. Update docs when public behavior or library behavior changes.
 
 ## Reporting bugs
 
