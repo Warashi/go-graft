@@ -114,6 +114,28 @@ const (
     Errored
 )
 
+type ExecutedPackage struct {
+    ImportPath string
+    RunPattern string
+}
+
+type MutantResult struct {
+    ID          string
+    RuleName    string
+    File        string
+    Line        int
+    Column      int
+    Package     string
+    Executed    []ExecutedPackage
+    Status      Status
+    Reason      string
+    Command     []string
+    Stdout      string
+    Stderr      string
+    TimedOut    bool
+    ElapsedNsec int64
+}
+
 type Report struct {
     Total       int
     Killed      int
