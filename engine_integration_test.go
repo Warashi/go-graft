@@ -170,6 +170,123 @@ func TestEngineRunTypeOfWorksOnCallbackNode(t *testing.T) {
 	}
 }
 
+func TestEngineRunWithDeepCopyPreventsMutationPointSideEffects(t *testing.T) {
+	moduleDir := t.TempDir()
+	writeModuleFile(t, moduleDir, "go.mod", "module example.com/m\n\ngo 1.26.0\n")
+	writeModuleFile(t, moduleDir, "p/add.go", "package p\n\nfunc Add() int { return (1 + 2) + (3 + 4) }\n")
+	writeModuleFile(t, moduleDir, "p/add_test.go", "package p\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add() != 10 {\n\t\tt.Fatal(\"bad\")\n\t}\n}\n")
+
+	e := New(Config{
+		Workers:       1,
+		MutantTimeout: 5 * time.Second,
+	})
+	Register[*ast.BinaryExpr](e, func(_ *Context, n *ast.BinaryExpr) (*ast.BinaryExpr, bool) {
+		if n.Op != token.ADD {
+			return nil, false
+		}
+		leftParen, ok := n.X.(*ast.ParenExpr)
+		if !ok {
+			return nil, false
+		}
+		left, ok := leftParen.X.(*ast.BinaryExpr)
+		if !ok || left.Op != token.ADD {
+			return nil, false
+		}
+		left.Op = token.SUB
+		return n, true
+	}, WithName("outer-mutates-child"), WithDeepCopy())
+	Register[*ast.BinaryExpr](e, func(_ *Context, n *ast.BinaryExpr) (*ast.BinaryExpr, bool) {
+		if n.Op != token.ADD {
+			return nil, false
+		}
+		if _, ok := n.X.(*ast.BasicLit); !ok {
+			return nil, false
+		}
+		if _, ok := n.Y.(*ast.BasicLit); !ok {
+			return nil, false
+		}
+		n.Op = token.SUB
+		return n, true
+	}, WithName("inner-add-to-sub"))
+
+	report := runInDir(t, moduleDir, func() (*Report, error) {
+		return e.Run(context.Background(), "./...")
+	})
+
+	var outerCount int
+	var innerCount int
+	for _, mutant := range report.Mutants {
+		switch mutant.RuleName {
+		case "outer-mutates-child":
+			outerCount++
+		case "inner-add-to-sub":
+			innerCount++
+		}
+	}
+	if outerCount == 0 {
+		t.Fatalf("outer-mutates-child mutants = %d, want > 0 (report=%+v)", outerCount, report)
+	}
+	if innerCount != outerCount*2 {
+		t.Fatalf("inner-add-to-sub mutants = %d, want %d (report=%+v)", innerCount, outerCount*2, report)
+	}
+}
+
+func TestEngineRunWithDeepCopyResolvesDescendantOriginalAndType(t *testing.T) {
+	moduleDir := t.TempDir()
+	writeModuleFile(t, moduleDir, "go.mod", "module example.com/m\n\ngo 1.26.0\n")
+	writeModuleFile(t, moduleDir, "p/add.go", "package p\n\nfunc Add(a, b, c, d int) int { return (a + b) + (c + d) }\n")
+	writeModuleFile(t, moduleDir, "p/add_test.go", "package p\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 2, 3, 4) != 10 {\n\t\tt.Fatal(\"bad\")\n\t}\n}\n")
+
+	e := New(Config{
+		Workers:       1,
+		MutantTimeout: 5 * time.Second,
+	})
+
+	var sawDescendantOriginal bool
+	var sawDescendantType bool
+	Register[*ast.BinaryExpr](e, func(c *Context, n *ast.BinaryExpr) (*ast.BinaryExpr, bool) {
+		if n.Op != token.ADD {
+			return nil, false
+		}
+		leftParen, ok := n.X.(*ast.ParenExpr)
+		if !ok {
+			return nil, false
+		}
+		left, ok := leftParen.X.(*ast.BinaryExpr)
+		if !ok {
+			return nil, false
+		}
+
+		originalLeft, ok := c.Original(left).(*ast.BinaryExpr)
+		if ok && originalLeft != left && originalLeft.Op == token.ADD {
+			sawDescendantOriginal = true
+		}
+		typ := c.TypeOf(left)
+		if typ != nil && typ.String() == "int" {
+			sawDescendantType = true
+		}
+
+		n.Op = token.SUB
+		return n, true
+	}, WithName("deepcopy-descendant-context"), WithDeepCopy())
+
+	report := runInDir(t, moduleDir, func() (*Report, error) {
+		return e.Run(context.Background(), "./...")
+	})
+	if report.Total == 0 {
+		t.Fatalf("total = %d, want > 0 (report=%+v)", report.Total, report)
+	}
+	if report.Killed == 0 {
+		t.Fatalf("killed = %d, want > 0 (report=%+v)", report.Killed, report)
+	}
+	if !sawDescendantOriginal {
+		t.Fatal("expected ctx.Original to resolve deep-copied descendant node")
+	}
+	if !sawDescendantType {
+		t.Fatal("expected ctx.TypeOf to resolve type for deep-copied descendant node")
+	}
+}
+
 func TestEngineRunSkipsMutationsInTestFiles(t *testing.T) {
 	moduleDir := t.TempDir()
 	writeModuleFile(t, moduleDir, "go.mod", "module example.com/m\n\ngo 1.26.0\n")

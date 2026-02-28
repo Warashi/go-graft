@@ -89,12 +89,6 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 			mutantID := "m-" + itoa(mutantSeq)
 			mutantSeq++
 
-			nodeInput := astcow.ShallowCopyNode(point.Node)
-			if nodeInput == nil {
-				baseResults = append(baseResults, buildImmediateResult(mutantID, rule.name, point, model.MutantErrored, "unsupported mutation node type"))
-				continue
-			}
-
 			callbackCtx := newContext()
 			if pkg != nil {
 				callbackCtx.Fset = pkg.Fset
@@ -103,7 +97,26 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 			}
 			callbackCtx.File = point.File
 			callbackCtx.Path = append([]ast.Node(nil), point.Path...)
-			callbackCtx.setOriginal(nodeInput, point.Node)
+
+			var nodeInput ast.Node
+			if rule.deepCopy {
+				deepCopied, cloneMap, err := astcow.DeepCopyNode(point.Node)
+				if err != nil {
+					baseResults = append(baseResults, buildImmediateResult(mutantID, rule.name, point, model.MutantErrored, err.Error()))
+					continue
+				}
+				nodeInput = deepCopied
+				for clone, original := range cloneMap {
+					callbackCtx.setOriginal(clone, original)
+				}
+			} else {
+				nodeInput = astcow.ShallowCopyNode(point.Node)
+				if nodeInput == nil {
+					baseResults = append(baseResults, buildImmediateResult(mutantID, rule.name, point, model.MutantErrored, "unsupported mutation node type"))
+					continue
+				}
+				callbackCtx.setOriginal(nodeInput, point.Node)
+			}
 
 			mutatedNode, changed, mutateErr := applyRule(rule, callbackCtx, nodeInput)
 			if mutateErr != nil {
