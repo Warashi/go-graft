@@ -122,6 +122,32 @@ func TestEngineRunProvidesPackagesPackageInContext(t *testing.T) {
 	}
 }
 
+func TestEngineRunSkipsMutationsInTestFiles(t *testing.T) {
+	moduleDir := t.TempDir()
+	writeModuleFile(t, moduleDir, "go.mod", "module example.com/m\n\ngo 1.26.0\n")
+	writeModuleFile(t, moduleDir, "p/add.go", "package p\n\nfunc Add() int { return 1 }\n")
+	writeModuleFile(t, moduleDir, "p/add_test.go", "package p\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add()+1 != 2 {\n\t\tt.Fatal(\"bad\")\n\t}\n}\n")
+
+	e := New(Config{
+		Workers:       1,
+		MutantTimeout: 5 * time.Second,
+	})
+	Register[*ast.BinaryExpr](e, func(_ *Context, n *ast.BinaryExpr) (*ast.BinaryExpr, bool) {
+		if n.Op != token.ADD {
+			return nil, false
+		}
+		n.Op = token.SUB
+		return n, true
+	}, WithName("add-to-sub"))
+
+	report := runInDir(t, moduleDir, func() (*Report, error) {
+		return e.Run(context.Background(), "./...")
+	})
+	if report.Total != 0 {
+		t.Fatalf("total = %d, want 0 (report=%+v)", report.Total, report)
+	}
+}
+
 func runInDir(t *testing.T, dir string, fn func() (*Report, error)) *Report {
 	t.Helper()
 	prev, err := os.Getwd()
