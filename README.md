@@ -1,0 +1,127 @@
+# go-graft
+
+`go-graft` is a Go mutation testing framework built on top of `go test -overlay`.
+It can run mutants in parallel without rewriting your original source files.
+
+## Project status
+
+- Current maturity: `v0` (pre-1.0)
+- Breaking changes may happen while APIs and behavior are being stabilized.
+
+## Installation
+
+Install CLI:
+
+```bash
+go install github.com/Warashi/go-graft/cmd/go-graft@latest
+```
+
+## CLI quick start
+
+Run mutation testing for all packages in the current module:
+
+```bash
+go-graft ./...
+```
+
+If no package pattern is provided, CLI defaults to `./...`.
+
+Main flags:
+
+- `-workers`: number of concurrent `go test` worker processes (default: `1`)
+- `-timeout`: timeout per mutant (default: `30s`)
+- `-base-temp-dir`: base directory for mutant temporary files
+- `-keep-temp`: keep mutant temp directories for debugging
+- `-builtin-add-to-sub`: enable builtin `+ -> -` mutation rule (default: `true`)
+
+## Library quick start
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"go/ast"
+	"go/token"
+	"time"
+
+	"github.com/Warashi/go-graft"
+)
+
+func main() {
+	e := graft.New(graft.Config{
+		Workers:       2,
+		MutantTimeout: 30 * time.Second,
+	})
+
+	graft.Register[*ast.BinaryExpr](e, func(_ *graft.Context, n *ast.BinaryExpr) (*ast.BinaryExpr, bool) {
+		if n.Op != token.ADD {
+			return nil, false
+		}
+		n.Op = token.SUB
+		return n, true
+	}, graft.WithName("add-to-sub"))
+
+	report, err := e.Run(context.Background(), "./...")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("score=%.2f\n", report.MutationScore())
+}
+```
+
+## Execution statuses
+
+Each mutant is reported as one of the following statuses:
+
+- `Killed`: at least one selected test failed
+- `Survived`: selected tests passed, mutation was not detected
+- `Unsupported`: analysis/execution could not produce a reliable verdict
+- `Errored`: mutant generation or execution failed unexpectedly
+
+## Public API surface
+
+Current public API is intentionally small:
+
+- `Engine`
+- `Register`
+- `RegisterMethodCallSwap`
+- `RegisterFunctionCallSwap`
+- `Context`
+- `Report`
+
+## Compatibility policy
+
+This repository is currently in `v0`.
+Backward compatibility is **not guaranteed** before `v1.0.0`.
+
+## FAQ
+
+### Why does go-graft use `go test -overlay`?
+
+It allows running mutants without modifying your original source files.
+
+### Why are some mutants marked `Unsupported`?
+
+`Unsupported` is used when the tool cannot provide a reliable result.
+This is intentionally separated from `Survived` to avoid false confidence.
+
+### How do I debug mutant execution?
+
+Use `-keep-temp` and inspect temporary mutant directories and command output.
+
+## Design docs
+
+- [Architecture summary](docs/design-summary.md)
+- [Test selection strategy summary](docs/design-pruning-summary.md)
+- [Detailed design document](docs/design.md)
+
+## Contributing and security
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
