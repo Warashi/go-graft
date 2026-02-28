@@ -7,6 +7,8 @@ It can run mutants in parallel without rewriting your original source files.
 
 - Current maturity: `v0` (pre-1.0)
 - Breaking changes may happen while APIs and behavior are being stabilized.
+- Most of this repository was initially generated with coding agents.
+- Treat the project as experimental and validate behavior, security, and performance for your use case.
 
 ## Quick start (library)
 
