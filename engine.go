@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"io"
 	"os"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/Warashi/go-graft/internal/astcow"
@@ -57,7 +59,11 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 	if err != nil {
 		return nil, err
 	}
-	tests := testdiscover.Discover(project)
+	discovered := testdiscover.DiscoverDetailed(project)
+	if debugEnabled() {
+		writeExcludedMutationTestsDebug(os.Stderr, discovered.Excluded)
+	}
+	tests := discovered.Included
 	points := mutationpoint.Collect(project, registry.targetTypes())
 
 	builder := mutantbuild.Builder{BaseTempDir: e.Config.BaseTempDir}
@@ -260,5 +266,37 @@ func mapStatus(status model.MutantStatus) Status {
 		return Unsupported
 	default:
 		return Errored
+	}
+}
+
+func debugEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("GO_GRAFT_DEBUG")))
+	if v == "" {
+		return false
+	}
+	switch v {
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return true
+	}
+}
+
+func writeExcludedMutationTestsDebug(w io.Writer, excluded []testdiscover.ExcludedTest) {
+	if w == nil || len(excluded) == 0 {
+		return
+	}
+	items := append([]testdiscover.ExcludedTest(nil), excluded...)
+	slices.SortFunc(items, func(a testdiscover.ExcludedTest, b testdiscover.ExcludedTest) int {
+		if cmp := compareStrings(a.Ref.ImportPath, b.Ref.ImportPath); cmp != 0 {
+			return cmp
+		}
+		if cmp := compareStrings(a.Ref.Name, b.Ref.Name); cmp != 0 {
+			return cmp
+		}
+		return compareStrings(a.Reason, b.Reason)
+	})
+	for _, item := range items {
+		fmt.Fprintf(w, "go-graft debug: excluded test %s.%s reason=%s\n", item.Ref.ImportPath, item.Ref.Name, item.Reason)
 	}
 }
