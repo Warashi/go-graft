@@ -40,10 +40,20 @@ func (c *Context) Original(node ast.Node) ast.Node {
 	if c == nil || node == nil {
 		return nil
 	}
-	if original, ok := c.cloneMap[node]; ok {
-		return original
+	current := node
+	seen := map[ast.Node]struct{}{}
+	for {
+		if _, ok := seen[current]; ok {
+			return current
+		}
+		seen[current] = struct{}{}
+
+		original, ok := c.cloneMap[current]
+		if !ok {
+			return current
+		}
+		current = original
 	}
-	return node
 }
 
 // TypeOf returns static type of the node if available.
