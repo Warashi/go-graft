@@ -4,19 +4,12 @@ import (
 	"context"
 	"go/ast"
 	"go/token"
-	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
-const dogfoodChildEnv = "GO_GRAFT_DOGFOOD_CHILD"
-
 func TestEngineRunDogfoodRepository(t *testing.T) {
-	if os.Getenv(dogfoodChildEnv) == "1" {
-		t.Skip("skip dogfood test in child go test process")
-	}
-	t.Setenv(dogfoodChildEnv, "1")
-
 	e := New(Config{
 		Workers:       1,
 		MutantTimeout: 30 * time.Second,
@@ -49,5 +42,13 @@ func TestEngineRunDogfoodRepository(t *testing.T) {
 	}
 	if totalByStatus != report.Total {
 		t.Fatalf("status sum = %d, total = %d", totalByStatus, report.Total)
+	}
+
+	for _, mutant := range report.Mutants {
+		for _, executed := range mutant.Executed {
+			if strings.Contains(executed.RunPattern, "TestEngineRunDogfoodRepository") {
+				t.Fatalf("run pattern should exclude dogfood test, got %q", executed.RunPattern)
+			}
+		}
 	}
 }
