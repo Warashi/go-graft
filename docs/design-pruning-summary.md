@@ -1,38 +1,59 @@
-## ミューテーションテストにおけるテスト選択戦略の結論
+# Test Selection Strategy (Current Implementation)
 
-ミューテーションテスト最大の実用化の壁である「実行時間の爆発」を防ぎつつ、開発者の信頼を損なう「テストの実行漏れ」を極限までゼロにするための、Go言語の特性を活かしたハイブリッド・アーキテクチャの提案です。
+## Objective
 
-### 1. 解決すべき中核の課題（トレードオフ）
+The selection strategy balances:
 
-ミューテーションテストツールにおいて、テスト選択の精度は以下の2つのエラーのトレードオフになります。
+- avoiding false negatives (missing a test that could kill a mutant), and
+- reducing unnecessary test execution.
 
-* **False Positive（無駄なテストの実行）:** 実行時間が延びるだけなので、ある程度は**許容される**。
-* **False Negative（影響するテストの実行漏れ）:** 本来検知できるはずのミュータントが「生き残った（Survived）」と誤報される。開発者に無駄なテストを書かせ、ツールへの信頼を完全に破壊するため**絶対に回避しなければならない**。
+The current implementation intentionally favors reliability over aggressive pruning.
 
-Goにおいて、関数呼び出しのみを追跡する「コールグラフ解析」だけでは、副作用（グローバル変数や構造体フィールドの読み書き）による依存を見落とし、致命的なFalse Negativeを引き起こすリスクがあります。
+## Stage 1: Base Test Discovery Filter (`internal/testdiscover`)
 
-### 2. 採用するハイブリッド・アーキテクチャ
+Before per-mutant selection begins, go-graft discovers top-level tests and filters mutation tests:
 
-「実行漏れ（FN）を防ぐための広範な探索」と「Goの厳格なパッケージ仕様を利用した強力な刈り込み」を組み合わせます。
+- Includes normal top-level `TestXxx(*testing.T)` functions.
+- Excludes tests that can reach `(*graft.Engine).Run` through static call traversal.
+- Allows explicit overrides:
+  - `//gograft:include` forces inclusion.
+  - `//gograft:exclude` forces exclusion.
 
-具体的な処理ステップは以下の3段構成です。
+This prevents dogfooding mutation tests from recursively invoking the engine unless explicitly allowed.
 
-1. **制御フローの逆引き（CHA / RTA）**
-* ミュータントを仕掛けた関数から、コールグラフ（CHAまたはRTA）を用いて呼び出し元を逆引きし、到達可能なテスト関数を洗い出します。
+## Stage 2: Per-Mutant Reachability (`internal/testselect`)
 
+For each mutation point:
 
-2. **データフロー（副作用）の追跡追加**
-* False Negativeを防ぐため、ミュータントが書き換えた「パッケージレベルの変数」や「レシーバーのフィールド」を読み取っている関数・テストも追跡対象のエッジとして追加します。
-* *※この段階ではインターフェースの動的ディスパッチやエイリアス問題により、無関係なテストまで大量に繋がる「大爆発」が起きます。*
+1. Build a reverse caller graph from AST call expressions.
+2. Use the enclosing function of the mutation point as the seed.
+3. Walk reverse callers to collect reachable tests.
 
+If no tests are found through this graph, selection falls back to all discovered tests.
+This fallback avoids over-pruning from analysis blind spots.
 
-3. **パッケージ依存グラフ（DAG）による刈り込み（Pruning）**
-* `go/packages` で構築したモジュール全体の依存グラフを利用し、ステップ1・2で洗い出されたテスト関数のうち、**「ミュータントが属するパッケージに（直接・間接問わず）依存していないパッケージのテスト」をすべて安全に破棄**します。
+## Stage 3: Reverse Dependency Pruning (`internal/testselect`)
 
+After candidate tests are collected:
 
+1. Build reverse package dependencies from loaded package imports.
+2. Keep only tests in:
+   - the mutant package, or
+   - packages that depend (directly or transitively) on the mutant package.
 
-### 3. この戦略がもたらすメリット
+Tests in unrelated packages are safely pruned.
 
-* **漏れ（False Negative）の極小化:** 制御フローだけでなくデータフローも追跡することで、副作用を介した暗黙のテスト依存を見落としません。
-* **爆発（False Positive）の論理的な抑制:** インターフェースやデータフロー解析によって生じる「静的解析の過剰な繋がり」を、Goの「循環参照を持たない厳格なパッケージ依存（DAG）」という仕様をフィルターとして使うことで、重いポインタ解析（PTA）などを使わずに超高速かつ論理的に切り捨てます。
-* **最悪ケースの保証:** どんなに静的解析のエッジが爆発したとしても、実行されるテストの最大範囲は「パターン2（ミュータントに依存する全パッケージのテスト実行）」を超えることはなく、安全な上限キャップとして機能します。
+## Stage 4: Execution Grouping (`internal/testselect` + `internal/runner`)
+
+- Selected tests are grouped by package import path.
+- Test names are sorted, deduplicated, and converted to a `-run` regex.
+- Runner executes package groups sequentially inside one mutant, while mutants run in parallel by worker pool.
+
+If no package/test entries remain, runner reports the mutant as `Unsupported` with reason `test selection produced 0 tests`.
+
+## Tradeoffs and Limits
+
+- No CHA/RTA/PTA/SSA-based call graph is used in the current implementation.
+- Call resolution is AST-based (`Ident` and imported `SelectorExpr`) and intentionally simple.
+- Dynamic dispatch patterns can still reduce precision.
+- To avoid risky false confidence, the implementation prefers fallback expansion or `Unsupported` over claiming `Survived` on weak evidence.

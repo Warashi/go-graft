@@ -1,45 +1,75 @@
-# Go Mutation Testing Framework 設計要約
+# go-graft Architecture Summary
 
-## 1. プロジェクトの目標
+## Goal
 
-Goのビルドシステムの特性を活かし、安全かつ高速に複数ミュータント（変異コード）を並列実行できるミューテーションテストツールを構築する。ユーザーが独自のミューテーションルールを柔軟かつ型安全に定義できる「フレームワーク」として設計する。
+`go-graft` is a library-first mutation testing framework for Go.
+It runs mutants through `go test -overlay` so original source files are never rewritten.
 
-## 2. コア実行アーキテクチャ（並列化と高速化）
+## High-Level Execution Flow
 
-* **`-overlay` フラグの採用:** 元のソースコードを直接書き換えるのではなく、Go 1.16+ の `-overlay` フラグ（JSONマッピング）を利用する。これにより、ディスクI/Oを最小化しつつ、ソースコードの競合を防ぎ、安全な並列実行を実現する。
-* **Worker Pool モデル:** カバレッジからミューテーション有効箇所を特定後、インメモリで生成したミュータント（のOverlay JSON）をWorker Poolに流し込み、`go test` を並列実行する。無限ループ対策としてContextによるタイムアウト処理を挟む。
+The engine runs the following pipeline:
 
-## 3. ユーザーAPI設計（極限のDXと型安全性の両立）
+1. `internal/projectload`
+   - Loads packages with `go/packages` (`Tests: true`).
+   - Keeps only packages in the main module.
+   - Collects syntax, type info, import graph, and compiled file paths.
+2. `internal/testdiscover`
+   - Discovers top-level tests (`func TestXxx(t *testing.T)`).
+   - Auto-excludes tests that can reach `(*graft.Engine).Run`.
+   - Supports explicit overrides with `//gograft:include` and `//gograft:exclude`.
+3. `internal/mutationpoint`
+   - Scans non-`_test.go` files.
+   - Collects nodes whose concrete type matches registered rule targets.
+   - Stores location, enclosing function, and AST path.
+4. `internal/mutantbuild`
+   - Applies one rule at one mutation point to produce one mutant.
+   - Uses path cloning (`internal/astcow`) to replace one node without mutating the original AST.
+   - Writes a mutated file, temp workspace, and `overlay.json`.
+5. `internal/testselect`
+   - Finds candidate tests by reverse caller reachability from the enclosing function.
+   - Falls back to all discovered tests when reachability yields no tests.
+   - Prunes by reverse package dependencies from the mutant package.
+6. `internal/runner`
+   - Executes mutants with a worker pool (`Config.Workers`).
+   - Runs `go test` with:
+     - `-overlay=<path>`
+     - `-failfast`
+     - `-parallel=1`
+     - `-count=1`
+     - `-run <regex>`
+   - Uses per-mutant timeout and `TMPDIR` isolation.
+7. `internal/reporting`
+   - Aggregates totals and per-mutant execution details into `Report`.
 
-ユーザーがミューテーションルールを定義する際の開発者体験（DX）を最大化するため、Go 1.18+ の Generics を活用する。
+## Public API Surface
 
-* **型アサーションの排除:** `Rule[T ast.Node]` というGenericsインターフェースを提供。ユーザーは対象ノードの型（例：`*ast.BinaryExpr`）を指定するだけでよく、内部の型キャストはツール側が隠蔽して行う。
-* **コンテキスト（文脈）の提供:** 現在評価中のノードだけでなく、親ノードや祖先ノードを辿れるスタック情報（`Path`）を持つ `Context` を `Mutate` 関数に渡す。
+Current public API is intentionally small:
 
-## 4. AST操作の安全性とパフォーマンス（CoWアーキテクチャ）
+- `Engine`
+- `Register`
+- `RegisterMethodCallSwap`
+- `RegisterFunctionCallSwap`
+- `Context`
+- `Report`
 
-ASTの直接操作による「ポインタ汚染（元のASTの意図せぬ破壊）」を防ぎつつ、全コピーによるパフォーマンス低下を避けるための設計。
+## Mutation Rule Model
 
-* **Copy-on-Write (CoW) の採用:**
-変更があったノードからルート（`ast.File`）までの経路（Path）のみを新しく複製（シャローコピー）し、他のノードはポインタを共有する。
-* **コード生成による静的解決:**
-CoW実行時のノード差し替え処理（型スイッチ）は、リフレクションによるオーバーヘッドを避けるため、`go generate` を用いて `go/ast` パッケージから静的にコード生成する。
-* **自動シャローコピーとオプトインのディープコピー:**
-* 通常時：エンジン側でノードを「自動シャローコピー」してからユーザーに渡すことで、ユーザーが直属のフィールドを書き換えても安全。
-* 複雑なルール用：子ノードまで深く書き換えるルール用に、`RequiresDeepCopy` フラグを用意し、必要な時だけディープコピーを行う。
+- A rule is registered per concrete `ast.Node` type via generics.
+- A mutant is generated only when a rule returns `(mutatedNode, true)`.
+- The engine builds mutants under the invariant: one mutant mutates one node at one mutation point.
+- `WithDeepCopy()` is accepted and stored in rule metadata, but currently does not change mutation execution behavior.
 
+## Result Statuses
 
+Each mutant is classified as exactly one of:
 
-## 5. 意味論的（Semantic）ミューテーションへの対応
+- `Killed`: selected tests failed or timed out.
+- `Survived`: selected tests passed.
+- `Unsupported`: no reliable verdict (for example, selected test set is empty).
+- `Errored`: mutant preparation failed before test execution.
 
-構文だけでなく、型情報に基づいた賢いミューテーション（例：文字列の `+` は無視し、数値の `+` だけ `-` に変える等）を実現する。
+## Practical Constraints
 
-* **`go/types` パッケージの統合:**
-パース時に一度だけ型チェックを行い、`types.Info` を `Context` に保持させる。これにより、コンパイルエラーになるだけの無駄なミュータント生成を抑制できる。
-* **Clone Registry（複製追跡マップ）パターンの導入:**
-ノードを複製（シャロー/ディープコピー）するとポインタが変わってしまい、`types.Info` のマップから型情報が引けなくなる問題を解決するため、`Context` 内部に「コピー後ノード -> オリジナルノード」の逆引きマップ（`cloneMap`）を実装する。
-ユーザーはコピーされたノードを意識することなく、`ctx.TypeOf(node)` を呼ぶだけで正確な型情報を取得できる。
-
-## 6. 次のフェーズの課題
-
-メモリ上で安全・高速に生成・管理できるようになったミュータント（AST群）を、実際に **「どのように効率よくディスクに出力し、Worker Poolを使って `go test -overlay` で並列実行するか」** という、ファイルI/OとOSレベルのプロセス管理の設計。
+- Test call reachability is based on AST-level call resolution and is conservative.
+- Dynamic behavior (reflection, runtime dispatch patterns, complex indirection) may not be fully captured.
+- Reliability is prioritized over aggressive pruning; when uncertain, the tool can expand selection or return `Unsupported` instead of reporting a risky `Survived`.
