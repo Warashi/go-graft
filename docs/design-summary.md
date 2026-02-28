@@ -66,7 +66,9 @@ Canonical and complete API definitions are documented in `docs/design.md` (Secti
 - A rule is registered per concrete `ast.Node` type via generics.
 - A mutant is generated only when a rule returns `(mutatedNode, true)`.
 - The engine builds mutants under the invariant: one mutant mutates one node at one mutation point.
-- `WithDeepCopy()` is accepted and stored in rule metadata, but currently does not change mutation execution behavior.
+- Default callback input is a shallow copy of the mutation-point node.
+- `WithDeepCopy()` switches callback input to deep-copy mode for that rule and enables descendant `Context.Original` / `Context.TypeOf` resolution.
+- Deep-copy preparation failure is reported as immediate `Errored` for that mutant (no shallow fallback).
 
 ## Result Statuses
 

@@ -16,6 +16,7 @@ Do not place user-level global preferences or rules for other projects here.
 - Mutants are built with the assumption `1 mutant = 1 mutation point` (single-node replacement).
 - Execution statuses are handled separately as `Killed`, `Survived`, `Unsupported`, and `Errored`.
 - Test execution is handled by `internal/runner`, which runs `go test` with `-overlay`, `-failfast`, `-parallel=1`, and `-count=1`.
+- Rule callback input is shallow-copied by default; `WithDeepCopy` deep-copies the callback input subtree and enables descendant clone-origin lookup through `Context.Original` / `Context.TypeOf`.
 - `internal/testdiscover` extracts regular tests and auto-excludes mutation tests that can reach `(*graft.Engine).Run`. This can be overridden with `//gograft:include` and `//gograft:exclude` directives.
 - `internal/testselect` builds one selector per run. Default call graph mode is `auto` and resolves with fallback chain `rta -> cha -> ast` (`rta`/`cha`/`ast` can also be forced by config).
 - The core flow is split by responsibility as:
