@@ -8,7 +8,8 @@ Do not place user-level global preferences or rules for other projects here.
 - The project is currently `v0` (pre-`v1.0.0`), so breaking changes are allowed while APIs and behavior are stabilized.
 - `go-graft` is a Go mutation testing framework built on `go test -overlay`.
 - The project is provided as a library only (no CLI).
-- Public API surface is in the root package: `Engine`, `Register`, `RegisterMethodCallSwap`, `RegisterFunctionCallSwap`, `Context`, and `Report`.
+- Representative root-package API entry points include `Engine`, `Register`, `RegisterMethodCallSwap`, `RegisterFunctionCallSwap`, `Context`, and `Report` (non-exhaustive).
+- Canonical and complete API definitions are documented in `docs/design.md` (Section 2: Public API) and `go doc -all github.com/Warashi/go-graft`.
 
 ## Implementation Invariants (Current)
 
