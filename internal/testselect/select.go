@@ -13,20 +13,40 @@ type functionKey struct {
 	name  string
 }
 
+// Selector picks tests for mutation points in one loaded project.
+type Selector struct {
+	project        *model.Project
+	tests          []model.TestRef
+	astCallersBack map[functionKey][]functionKey
+}
+
+// NewSelector creates a selector and caches AST-level reverse callers.
+func NewSelector(project *model.Project, tests []model.TestRef) *Selector {
+	return &Selector{
+		project:        project,
+		tests:          append([]model.TestRef(nil), tests...),
+		astCallersBack: buildReverseCallers(project),
+	}
+}
+
 // Select picks tests for one mutation point.
 func Select(project *model.Project, tests []model.TestRef, point model.MutationPoint) model.SelectedTests {
+	return NewSelector(project, tests).Select(point)
+}
+
+// Select picks tests for one mutation point.
+func (s *Selector) Select(point model.MutationPoint) model.SelectedTests {
 	selected := model.SelectedTests{
 		ByImportPath: make(map[string][]string),
 	}
-	if project == nil || len(tests) == 0 {
+	if s == nil || s.project == nil || len(s.tests) == 0 {
 		return selected
 	}
 
-	allowedPkgs := reverseDependers(project, point.PkgImportPath)
-	reverseCallers := buildReverseCallers(project)
-	candidate := candidateTestsByReachability(tests, point, reverseCallers)
+	allowedPkgs := reverseDependers(s.project, point.PkgImportPath)
+	candidate := candidateTestsByReachability(s.tests, point, s.astCallersBack)
 	if len(candidate) == 0 {
-		candidate = append([]model.TestRef(nil), tests...)
+		candidate = append([]model.TestRef(nil), s.tests...)
 	}
 
 	unique := make(map[string]map[string]struct{})
