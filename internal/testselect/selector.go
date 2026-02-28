@@ -80,19 +80,21 @@ func (m CallGraphMode) withDefault() CallGraphMode {
 
 func backendBuildOrder(mode CallGraphMode) []string {
 	switch mode.withDefault() {
-	case CallGraphModeCHA:
-		return []string{"cha", "ast"}
 	case CallGraphModeRTA:
+		return []string{"rta", "cha", "ast"}
+	case CallGraphModeCHA:
 		return []string{"cha", "ast"}
 	case CallGraphModeAST:
 		return []string{"ast"}
 	default:
-		return []string{"cha", "ast"}
+		return []string{"rta", "cha", "ast"}
 	}
 }
 
 func buildBackend(kind string, project *model.Project, tests []model.TestRef) (selectorBackend, error) {
 	switch kind {
+	case "rta":
+		return newRTABackend(project, tests)
 	case "cha":
 		return newCHABackend(project, tests)
 	case "ast":
@@ -124,4 +126,3 @@ func (b *astBackend) candidateTests(point model.MutationPoint) []model.TestRef {
 	}
 	return candidateTestsByReachability(b.tests, point, b.astCallersBack)
 }
-

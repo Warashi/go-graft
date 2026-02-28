@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Warashi/go-graft/internal/model"
@@ -15,7 +16,7 @@ import (
 	"github.com/Warashi/go-graft/internal/testdiscover"
 )
 
-func TestNewSelectorWithOptionsFallsBackToASTWhenCHAFails(t *testing.T) {
+func TestNewSelectorWithOptionsFallsBackToASTWhenRTAAndCHAFail(t *testing.T) {
 	project := &model.Project{
 		Packages: []*model.Package{
 			{ID: "p", ImportPath: "example.com/p"},
@@ -26,13 +27,61 @@ func TestNewSelectorWithOptionsFallsBackToASTWhenCHAFails(t *testing.T) {
 	}
 
 	selector := NewSelectorWithOptions(project, tests, SelectorOptions{
-		CallGraphMode: CallGraphModeCHA,
+		CallGraphMode: CallGraphModeRTA,
 	})
 	if selector.ResolvedBackend() != "ast" {
 		t.Fatalf("resolved backend = %q, want ast", selector.ResolvedBackend())
 	}
-	if len(selector.BuildFailures()) == 0 {
-		t.Fatal("BuildFailures() should not be empty")
+	failures := selector.BuildFailures()
+	if len(failures) != 2 {
+		t.Fatalf("BuildFailures() len = %d, want 2 (%v)", len(failures), failures)
+	}
+	if !strings.HasPrefix(failures[0], "rta:") {
+		t.Fatalf("first failure = %q, want rta:*", failures[0])
+	}
+	if !strings.HasPrefix(failures[1], "cha:") {
+		t.Fatalf("second failure = %q, want cha:*", failures[1])
+	}
+}
+
+func TestNewSelectorWithOptionsResolvesBackendByMode(t *testing.T) {
+	moduleDir := t.TempDir()
+	writeModuleFile(t, moduleDir, "go.mod", "module example.com/m\n\ngo 1.26.0\n")
+	writeModuleFile(t, moduleDir, "p/p.go", `package p
+func Entry() int {
+	return helper()
+}
+func helper() int { return 1 }
+`)
+
+	project, err := (projectload.Loader{Dir: moduleDir}).Load(context.Background(), "./...")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	pkg := findPackageByImportPath(project, "example.com/m/p")
+	if pkg == nil {
+		t.Fatal("package example.com/m/p not found")
+	}
+	tests := []model.TestRef{
+		{PkgID: pkg.ID, ImportPath: pkg.ImportPath, Name: "Entry"},
+	}
+
+	astSelector := NewSelectorWithOptions(project, tests, SelectorOptions{CallGraphMode: CallGraphModeAST})
+	chaSelector := NewSelectorWithOptions(project, tests, SelectorOptions{CallGraphMode: CallGraphModeCHA})
+	rtaSelector := NewSelectorWithOptions(project, tests, SelectorOptions{CallGraphMode: CallGraphModeRTA})
+	autoSelector := NewSelectorWithOptions(project, tests, SelectorOptions{CallGraphMode: CallGraphModeAuto})
+
+	if astSelector.ResolvedBackend() != "ast" {
+		t.Fatalf("ast selector resolved backend = %q, want ast", astSelector.ResolvedBackend())
+	}
+	if chaSelector.ResolvedBackend() != "cha" {
+		t.Fatalf("cha selector resolved backend = %q, want cha", chaSelector.ResolvedBackend())
+	}
+	if rtaSelector.ResolvedBackend() != "rta" {
+		t.Fatalf("rta selector resolved backend = %q, want rta", rtaSelector.ResolvedBackend())
+	}
+	if autoSelector.ResolvedBackend() != "rta" {
+		t.Fatalf("auto selector resolved backend = %q, want rta", autoSelector.ResolvedBackend())
 	}
 }
 
@@ -93,6 +142,66 @@ func TestUnrelated(t *testing.T) {}
 	}
 }
 
+func TestSelectWithRTAFindsFunctionValueCall(t *testing.T) {
+	moduleDir := t.TempDir()
+	writeModuleFile(t, moduleDir, "go.mod", "module example.com/m\n\ngo 1.26.0\n")
+	writeModuleFile(t, moduleDir, "p/p.go", `package p
+func callee() int { return 1 }
+func callViaFunc() int {
+	f := callee
+	return f()
+}
+func Touch() int { return callViaFunc() }
+func EntryReachable() int { return Touch() }
+func EntryUnrelated() int { return 0 }
+`)
+
+	project, err := (projectload.Loader{Dir: moduleDir}).Load(context.Background(), "./...")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	pkg := findPackageByImportPath(project, "example.com/m/p")
+	if pkg == nil {
+		t.Fatal("package example.com/m/p not found")
+	}
+	tests := []model.TestRef{
+		{PkgID: pkg.ID, ImportPath: pkg.ImportPath, Name: "EntryReachable"},
+		{PkgID: pkg.ID, ImportPath: pkg.ImportPath, Name: "EntryUnrelated"},
+	}
+	points := mutationpoint.Collect(project, []reflect.Type{reflect.TypeOf(&ast.BasicLit{})})
+	point, ok := findPointInFunc(points, "callee")
+	if !ok {
+		t.Fatal("mutation point in callee not found")
+	}
+
+	astSelector := NewSelectorWithOptions(project, tests, SelectorOptions{
+		CallGraphMode: CallGraphModeAST,
+	})
+	rtaSelector := NewSelectorWithOptions(project, tests, SelectorOptions{
+		CallGraphMode: CallGraphModeRTA,
+	})
+	if rtaSelector.ResolvedBackend() != "rta" {
+		t.Fatalf("resolved backend = %q, want rta", rtaSelector.ResolvedBackend())
+	}
+
+	astNames := selectedNames(astSelector.Select(point), "example.com/m/p")
+	rtaNames := selectedNames(rtaSelector.Select(point), "example.com/m/p")
+
+	if !slices.Equal(astNames, []string{"EntryReachable", "EntryUnrelated"}) {
+		t.Fatalf("ast selected = %v, want [EntryReachable EntryUnrelated]", astNames)
+	}
+	if !slices.Equal(rtaNames, []string{"EntryReachable"}) {
+		t.Fatalf("rta selected = %v, want [EntryReachable]", rtaNames)
+	}
+}
+
+func findPackageByImportPath(project *model.Project, importPath string) *model.Package {
+	if project == nil {
+		return nil
+	}
+	return project.ByImportPath[importPath]
+}
+
 func findPointInFunc(points []model.MutationPoint, funcName string) (model.MutationPoint, bool) {
 	for _, point := range points {
 		if point.EnclosingFunc == nil || point.EnclosingFunc.Name == nil {
@@ -122,4 +231,3 @@ func writeModuleFile(t *testing.T, moduleDir string, rel string, content string)
 		t.Fatalf("WriteFile(%s) error = %v", path, err)
 	}
 }
-
