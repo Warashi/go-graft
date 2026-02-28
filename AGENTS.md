@@ -7,7 +7,7 @@
 
 - **未公開のため、変更プランを立てる時は後方互換性を破壊する前提で考えること。**
 - `go-graft` は `go test -overlay` を使う Go のミューテーションテストフレームワーク。
-- 公開APIはルートパッケージ（`Engine`, `Register`, `Context`, `Report`）。
+- 公開APIはルートパッケージ（`Engine`, `Register`, `RegisterMethodCallSwap`, `Context`, `Report`）。
 - CLI は `cmd/go-graft/main.go`。パターン未指定時は `./...` を対象に実行する。
 
 ## 実装上の前提（現状）
