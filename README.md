@@ -56,7 +56,7 @@ Each mutant is reported as one of the following statuses:
 
 ## Public API surface
 
-Current public API is intentionally small:
+Representative public API entry points (non-exhaustive):
 
 - `Engine`
 - `Register`
@@ -64,6 +64,11 @@ Current public API is intentionally small:
 - `RegisterFunctionCallSwap`
 - `Context`
 - `Report`
+
+For the canonical, complete API definition, see:
+
+- `docs/design.md` (Section 2: Public API)
+- `go doc -all github.com/Warashi/go-graft`
 
 ## Compatibility policy
 
