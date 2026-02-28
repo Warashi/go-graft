@@ -1,261 +1,79 @@
-# Go Mutation Testing Framework Design Document
+# go-graft Detailed Design (Current Implementation)
 
-> 対象：Go 1.18+
-> 目的：このドキュメントだけを渡して、実装者（ジュニア）が開発を進められる粒度まで具体化する
-> スコープ：フレームワーク（ライブラリ）のみ。CLI は提供しない
+## 1. Scope
 
----
+This document describes the current implementation of `github.com/Warashi/go-graft`.
+It is not a roadmap. Future ideas are intentionally omitted unless already implemented.
 
-## 0. サマリ
+### In scope
 
-本プロジェクトは、Go の **`go test -overlay`** を軸に、元ソースを破壊せずにミュータント（変異コード）を生成・並列実行する **ミューテーションテスト・フレームワーク**を作る。
+- Library behavior and public API in package `graft`
+- Internal execution pipeline and data flow
+- Current test-selection and runner behavior
+- Current limits and reliability boundaries
 
-設計の核は以下：
+### Out of scope
 
-* **安全な並列**：1ミュータントごとに **temp dir + overlay JSON** を作り、`go test -overlay` をプロセス単位で並列実行
-* **型安全なルールAPI**：Generics で `ast.Node` 型を固定し、`*Context`（独自）を渡して **型情報/祖先文脈**を使える
-* **ASTはCopy-on-Write**：変更経路（Path）のみシャローコピーして差し替え、全コピーを避ける（反射は避け、`go generate` で静的生成）
-* **テスト選択戦略**：FN（実行漏れ）を致命傷扱いしつつ、GoのパッケージDAG依存を使って FP（余計な実行）を刈り込むハイブリッド
-* **保証は範囲を限定**：万能なFNゼロ保証はしない。**保証対象外**を明示し、怪しい結果を「Survived」と誤報しない
+- CLI design (the project currently provides no CLI)
+- Unimplemented optimization proposals
+- Compatibility promises beyond the current `v0` phase
 
----
+## 2. Public API
 
-## 1. ゴール / 非ゴール
-
-### 1.1 ゴール（必須）
-
-1. ユーザーが型安全にミューテーションルールを登録できる（Generics、型アサーション不要）
-2. ミュータント生成は安全（元AST破壊なし）かつ高速（CoW）
-3. ミュータントを並列実行できる（worker pool）
-4. `go test` は **パッケージ単位で起動**し、`-run` で **関数単位に絞る**
-5. `-failfast` を利用し、ミュータントが kill されたら即終了できる
-6. タイムアウトは **Killed** として扱う
-7. どの結果も説明可能（どのルール、どの箇所、どのテストで kill されたか）
-
-### 1.2 非ゴール（v1ではやらない）
-
-* 変異ファイルの内容ハッシュによる永続キャッシュ（I/O削減の高度最適化）
-* 反射/unsafe/cgo を含むあらゆるケースでの FN ゼロ保証
-* 1箇所から複数ミュータント候補を返す API（v1では「高々1」）
-* テストの外部資源（固定ポート/DB等）を自動で安全化する高度な隔離
-
----
-
-## 2. 設計上の“契約”（暗黙知の明文化）
-
-### 2.1 不変条件（強い制約）
-
-* **1ミュータントで同時に書き換える `ast.Node` は1つまで**
-* **1ルール×1ノード → 高々1ミュータント**
-
-  * 複数バリエーションが必要ならルールを複数登録する
-* `go test` は **パッケージ単位**、`-run` で **テスト関数単位**
-* `go test -parallel` は常に **1**
-* 並列数ノブは **ワーカー数（同時 `go test` プロセス数）**のみ
-* 隔離は **TMPDIR まで**（GOCACHE/GOPATHは go command が適切に扱う前提）
-
-### 2.2 保証範囲（C：保証対象を限定）
-
-* “ツールが約束できる範囲”をドキュメントで明示し、それ以外は **Unsupported** として結果を分離する
-* Unsupported を **Survived と誤報しない**（信頼を守る）
-
----
-
-## 3. 用語
-
-* **Mutation Point**：変異対象となるASTノード（1ミュータント=1ポイント）
-* **Mutant**：1つの変異（1ノード差し替え）を適用した実行単位
-* **Rule**：ユーザーが登録する変異ルール
-* **Overlay**：`go test -overlay` で差し替えるファイルマッピングJSON
-* **Killed**：テスト失敗/タイムアウト/実行エラーにより変異が検知された
-* **Survived**：選択されたテストが全て成功し、変異が検知されなかった
-* **Unsupported**：保証範囲外/解析不能などで信頼できない（Survived扱いにしない）
-
----
-
-## 4. 公開API（フレームワーク）
-
-> ※標準 `context.Context` と混同しないよう、独自の文脈は `*mutest.Context` と呼ぶ
-
-### 4.1 Engine と Register
-
-```go
-package mutest
-
-import "go/ast"
-
-type Engine struct {
-    Config Config
-
-    // internal fields:
-    // rules registry, analyzers, logger, etc.
-}
-
-// ユーザーが変異ルールを登録する（Generics）
-func Register[T ast.Node](e *Engine, mutate func(c *Context, n T) (T, bool), opts ...RuleOption)
-```
-
-#### Rule の契約
-
-* `mutate` は **高々1回の変異**を返す
-* `bool` が false の場合、そのノードからはミュータントを生成しない
-* 引数 `n` はエンジン側で **シャローコピーされたノード**（元AST破壊を防ぐ）
-* ルールは **このノード以外を変更しない**（祖先/兄弟/別ファイルを書き換えない）
-* 複数候補が欲しい場合は、同じ型で別ルールを複数 Register する
-
-#### RuleOption（最低限）
-
-ジュニア実装でも扱えるように必須オプションは絞る。
-
-* `WithName(name string)`：レポートに出すためのルール名（未指定なら `rule#N`）
-* `WithDeepCopy()`：子孫まで書き換える等、深い変形が必要な場合に使用（v1では実装コスト次第で後回し可）
-
-```go
-type RuleOption func(*ruleConfig)
-```
-
-### 4.2 Engine 実行API
+### 2.1 Engine and Config
 
 ```go
 type Config struct {
-    Workers int           // 同時 go test プロセス数（唯一の並列ノブ）
+    Workers       int
     MutantTimeout time.Duration
-    BaseTempDir string    // 空なら os.MkdirTemp のデフォルト
-    KeepTemp bool         // デバッグ用に temp を残す
+    BaseTempDir   string
+    KeepTemp      bool
 }
 
+type Engine struct {
+    Config Config
+}
+
+func New(config Config) *Engine
 func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error)
 ```
 
-* `patterns` は `go/packages` に渡すパッケージパターン（例：`./...`）
-* `runCtx` は全体のキャンセル/タイムアウト制御用
+Defaulting behavior:
 
----
+- `Workers <= 0` -> `1`
+- `MutantTimeout <= 0` -> `30s`
 
-## 5. 内部アーキテクチャ（モジュール構成）
-
-### 5.1 主要コンポーネント
-
-1. **Loader**
-
-   * `go/packages` でモジュール全体（Tests含む）をロード
-   * `types.Info` を保持（パース時に1回だけ型チェック）
-2. **MutationPoint Finder**
-
-   * AST を走査し、登録済みルールの対象型に一致するノードを拾う
-   * （推奨）カバレッジで対象を絞る
-3. **Analyzer**
-
-   * テスト関数一覧の抽出
-   * callgraph（CHA/RTA）
-   * 副作用データフロー（pkg var / receiver field）
-   * パッケージ依存DAGの reverse deps
-4. **Mutant Builder**
-
-   * ルール適用 → 変異ノード生成
-   * CoW で `*ast.File` を組み立て
-   * overlay 用の変異ファイル出力（temp）
-5. **Runner**
-
-   * worker pool
-   * `go test -overlay` をパッケージ単位で順次実行（-runで関数絞り、-failfast）
-6. **Reporter**
-
-   * 結果集計・表示（Killed/Survived/Unsupported を明確に分ける）
-
----
-
-## 6. 詳細設計
-
-## 6.1 パッケージロード（go/packages）
-
-### 目的
-
-* AST / Types / TypesInfo / Import graph / Tests を一度に取得する
-
-### 実装指針
-
-`packages.Load` を以下の Mode で呼ぶ：
-
-* `NeedName`
-* `NeedFiles`
-* `NeedCompiledGoFiles`（overlayのキーに使う絶対パスが欲しい）
-* `NeedSyntax`
-* `NeedTypes`
-* `NeedTypesInfo`
-* `NeedImports`
-* `NeedDeps`
-
-`Tests: true` を指定してテストパッケージ（`p_test`等）もロードする。
-
----
-
-## 6.2 テスト関数の抽出
-
-### 対象
-
-* トップレベルの `func TestXxx(t *testing.T)`
-  （サブテスト `t.Run` はトップレベルが走ればOK、v1では個別選択しない）
-
-### 実装
-
-各 `packages.Package` の `Syntax` を走査して `*ast.FuncDecl` を抽出する。
-
-判定：
-
-* 名前が `Test` + 先頭大文字（`TestFoo`）
-* 引数が1つで `*testing.T`
-
-  * 最初は AST で形を見る（`*ast.StarExpr` + `*ast.SelectorExpr`）でも可
-  * 可能なら `types.Info` でより正確に判定
-
-保持する構造：
+### 2.2 Rule registration
 
 ```go
-type TestRef struct {
-    PkgID string       // packages.Package.ID
-    ImportPath string  // go test に渡すパス
-    Name string        // TestFoo
-}
+type RuleOption func(*ruleConfig)
+
+func Register[T ast.Node](e *Engine, mutate func(c *Context, n T) (T, bool), opts ...RuleOption)
+func WithName(name string) RuleOption
+func WithDeepCopy() RuleOption
 ```
 
----
+Current behavior:
 
-## 6.3 Mutation Point の抽出
+- One rule targets one concrete `ast.Node` type `T`.
+- A mutant is created only when callback returns `(mutatedNode, true)`.
+- `WithDeepCopy()` is currently stored as rule metadata, but does not alter execution behavior yet.
 
-### 6.3.1 方針
-
-* 登録済み Rule の型 `T` にマッチするノードのみ対象
-* 可能ならカバレッジで対象を絞る（実行時間の爆発を避ける）
-
-### 6.3.2 AST走査
-
-* `ast.Inspect` で DFS
-* 祖先スタック `path []ast.Node` を維持
-* 同時に「現在の enclosing function」も維持（テスト選択の seed に必要）
-
-保持する構造：
+### 2.3 Swap helpers
 
 ```go
-type MutationPoint struct {
-    PkgID string
-    PkgImportPath string
-    File *ast.File
-    FilePath string           // compiled go file の絶対パス
-    Node ast.Node             // オリジナルノード
-    Path []ast.Node           // File -> ... -> Node
-    Pos token.Position
-    EnclosingFunc *ast.FuncDecl // ない場合（トップレベルなど）は nil
-}
+func RegisterFunctionCallSwap[F any](e *Engine, from F, to F, opts ...RuleOption)
+func RegisterMethodCallSwap[F any](e *Engine, from F, to F, opts ...RuleOption)
 ```
 
-### 6.3.3 1ミュータント=1ノード契約の反映
+Current constraints:
 
-* ミュータント生成時は「このポイントの Node」だけが変わる設計に固定する
+- Function swap accepts package-level functions only.
+- Function `from` and `to` must be in the same package and have identical signatures.
+- Method swap accepts method expressions (not method values).
+- Method `from` and `to` must share the same receiver named type and signature.
 
----
-
-## 6.4 `*Context`（独自文脈）
+### 2.4 Rule callback context
 
 ```go
 type Context struct {
@@ -263,334 +81,216 @@ type Context struct {
     Pkg   *packages.Package
     File  *ast.File
     Types *types.Info
-
-    Path []ast.Node
-
-    cloneMap map[ast.Node]ast.Node // clone -> original
+    Path  []ast.Node
 }
+
+func (c *Context) Original(node ast.Node) ast.Node
+func (c *Context) TypeOf(node ast.Node) types.Type
 ```
 
-提供メソッド（最低限）：
+`Original` resolves cloned nodes back to original AST nodes through internal clone tracking.
+`TypeOf` consults `types.Info` via that original-node mapping.
 
-* `TypeOf(node ast.Node) types.Type`
-* `Original(node ast.Node) ast.Node`（cloneMap逆引き）
-* （任意）`Parent() ast.Node` / `Ancestor(n int)` 等のヘルパ
-
-> 重要：`Context` は **mutate コールバック中のみ有効**。保持/共有はしない。
-
----
-
-## 6.5 CoW（Copy-on-Write）AST生成
-
-### 目的
-
-* 元ASTの破壊を防ぐ（ポインタ汚染防止）
-* ただし全ASTコピーは遅いので、変更経路（Path）のみコピーする
-
-### アルゴリズム（必須）
-
-入力：
-
-* `pathOrig []ast.Node`（File -> ... -> target）
-* `nodeOrig`（target）
-* `nodeMut`（ルールが返した変異ノード）
-
-処理（上に向かって差し替え）：
-
-1. `childClone = nodeMut`、`cloneMap[childClone]=nodeOrig`
-2. 親へ向かって順に：
-
-   * `parentClone := shallowCopy(parentOrig)`
-   * `cloneMap[parentClone]=parentOrig`
-   * `replaceChild(parentClone, childOrig, childClone)`
-
-     * ここで **sliceフィールドはコピーして差し替える**（CoWの肝）
-3. 最上位 `*ast.File` を得る
-
-### 反射禁止（性能要件）
-
-* `shallowCopy` / `replaceChild` は `go generate` で `go/ast` 定義から **静的生成**する
-* 生成物は `internal/astcow/generated_*.go` 等に置く
-
-最低限必要な生成関数：
-
-* `func shallowCopy(n ast.Node) ast.Node`
-* `func replaceChild(parent ast.Node, oldChild ast.Node, newChild ast.Node) bool`
-
----
-
-## 6.6 ミュータントの出力と Overlay JSON
-
-### 6.6.1 temp dir レイアウト（推奨）
-
-`<tmp>/mutest-<id>/`
-
-* `overlay.json`
-* `overlay/`（変異ファイル置き場）
-* `tmp/`（TMPDIR用）
-
-### 6.6.2 変異ファイル生成
-
-* `go/format` を使い `*ast.File` を整形して出力
-* 原則 v1 は **変異対象の1ファイルのみ**を overlay に載せる
-
-### 6.6.3 overlay.json 形式
-
-`go test -overlay` が読む JSON：
-
-```json
-{
-  "Replace": {
-    "/abs/path/original.go": "/abs/path/mutant-temp/overlay/original.go"
-  }
-}
-```
-
-* キーは `packages.Package.CompiledGoFiles` の絶対パスを使う（ズレを避ける）
-
----
-
-## 6.7 テスト選択（Hybrid）
-
-### 目的
-
-* 実行時間を抑えつつ、FN（実行漏れ）を極小化したい
-* ただし万能保証はしない（保証範囲外は Unsupported）
-
-### 6.7.1 事前計算（1回だけ）
-
-1. **パッケージ依存グラフ（DAG）**
-
-   * `go/packages` の Imports から `pkg -> imported` を作る
-   * reverse deps を作る（`depender -> depended` の逆）
-2. **callgraph（CHA / RTA）**
-
-   * SSAを構築し、callgraphを作る
-   * reverse edges を作る（callee -> callers）
-3. **副作用データフロー**
-
-   * pkg-level var の read/write
-   * receiver field の read/write
-   * writer->reader の依存エッジを作る
-
-### 6.7.2 ミュータントごとの選択
-
-seed：変異点の enclosing function
-
-1. reverse callgraph で到達可能なテストを集める
-2. 副作用エッジも含めて到達可能性を拡張（保守的に）
-3. **パッケージDAGの reverse deps** で刈り込み
-
-   * 「変異パッケージに依存しないパッケージのテスト」は **安全に捨てる**
-
-### 6.7.3 結果のグルーピング（go test 実行単位）
-
-* パッケージごとにテスト関数名を集め、`-run` の正規表現を作る：
-
-`^(TestA|TestB|TestC)$`（各 name は QuoteMeta）
-
-### 6.7.4 空集合の扱い（重要：誤報防止）
-
-* 何らかの理由で `Tfinal` が空になった場合は **Unsupported** として扱う
-
-  * **Survived にはしない**
-  * レポートに理由（例：test selection produced 0 tests）を記載
-
----
-
-## 6.8 実行（Runner）
-
-### 6.8.1 実行コマンド（固定仕様）
-
-ミュータントごとに、対象パッケージを順に実行する。
-
-* `go test <pkg> -run <regex> -failfast -parallel=1 -count=1 -overlay=<overlay.json>`
-
-> `-parallel=1` 固定（内側並列は常に殺す）
-> `-p` は制御しない（外側ワーカー並列のみがユーザー制御ノブ）
-
-### 6.8.2 ワーカー数（唯一の並列ノブ）
-
-* `Config.Workers` が同時 `go test` プロセス数
-* 各ミュータント内ではパッケージを **逐次**で実行（掛け算で過負荷になるのを避ける）
-
-### 6.8.3 TMPDIR 隔離
-
-* 各 `go test` 実行で `TMPDIR=<mutantTempDir>/tmp` を環境変数で指定
-* GOCACHE / GOPATH はいじらない（go commandが適切に扱う前提）
-
-### 6.8.4 タイムアウト
-
-* ミュータント単位の `context.WithTimeout` を作り `exec.CommandContext` で実行
-* タイムアウトは **Killed** 扱い
-
-### 6.8.5 早期終了
-
-* いずれかのパッケージで `go test` が non-zero を返したらその時点で **Killed** として打ち切り
-* `-failfast` によりパッケージ内でも早期終了を期待
-
----
-
-## 7. 結果モデルとレポート
-
-### 7.1 ステータス
+### 2.5 Report model
 
 ```go
 type Status int
+
 const (
     Killed Status = iota
     Survived
     Unsupported
     Errored
 )
+
+type Report struct {
+    Total       int
+    Killed      int
+    Survived    int
+    Unsupported int
+    Errored     int
+    Mutants     []MutantResult
+}
+
+func (r Report) MutationScore() float64
 ```
 
-### 7.2 Report
+`MutationScore()` is `killed / (killed + survived)`.
+`Unsupported` and `Errored` are excluded from the denominator.
 
-* 集計：
+## 3. Core Pipeline
 
-  * total, killed, survived, unsupported
-  * mutation score（killed/(killed+survived)、unsupported除外）
-* 各ミュータントの詳細：
+The implementation flow is:
 
-  * ID、RuleName、file:line:col、対象パッケージ
-  * 実行したパッケージと `-run` 対象
-  * Killed の場合：失敗コマンド、stdout/stderr、タイムアウト情報
+1. `internal/projectload`
+2. `internal/testdiscover`
+3. `internal/mutationpoint`
+4. `internal/mutantbuild`
+5. `internal/testselect`
+6. `internal/runner`
+7. `internal/reporting`
 
----
+`Engine.Run` orchestrates this flow.
 
-## 8. 保証対象外（ドキュメントに明示する項目）
+## 4. Module Details
 
-少なくとも以下を「保証対象外/サポート外」として明記する：
+### 4.1 `internal/projectload`
 
-### 8.1 ルール実装のサポート外
+Responsibilities:
 
-* 1ミュータントで複数 `ast.Node` を同時に変更する
-* `WithDeepCopy` なしで子孫ノードを直接書き換える
-* 変異点とは無関係な祖先/兄弟ノードの変更
-* 型情報の整合が崩れるような新規AST大量生成（cloneMapで追えない）
+- Load package graph with `go/packages` and `Tests: true`.
+- Request syntax, types, type info, imports, dependencies, module metadata.
+- Keep only packages in the main module.
+- Normalize source paths and build lookup maps.
 
-### 8.2 解析由来の保証対象外
+Important detail:
 
-* reflection / unsafe / cgo 等で callgraph・副作用解析が成立しないケース
-* 動的ディスパッチや別名解析が必要な高度ケース（v1では保守的にしか扱えない）
+- Both `GoFiles` and `CompiledGoFiles` are tracked.
+- Overlay replacement keys are based on compiled file paths when available.
 
-### 8.3 テスト環境由来の保証対象外
+### 4.2 `internal/testdiscover`
 
-* 固定ポート、共有DB、共有ファイルなどで並列に壊れるテスト
+Responsibilities:
 
-  * 緩和策：ワーカー数を下げる（最悪1）
-* TMPDIR 以外の共有資源に依存するテスト
+- Discover top-level test functions:
+  - Name prefix `Test` with uppercase continuation
+  - Single parameter of type `*testing.T` (validated with AST + type info)
+- Build intra-project function call relations
+- Detect whether each test can reach `(*graft.Engine).Run`
 
-> 重要：保証対象外に触れた場合、結果は **Unsupported** に寄せ、Survived誤報を避ける
+Filtering behavior:
 
----
+- Default: tests that can reach engine `Run` are excluded as mutation tests.
+- Directive overrides:
+  - `//gograft:include` forces inclusion.
+  - `//gograft:exclude` forces exclusion.
+- Included and excluded tests are returned with explicit exclusion reasons.
 
-## 9. 実装手順（ジュニア向けマイルストーン）
+### 4.3 `internal/mutationpoint`
 
-### Milestone 1：Engine骨格と Rule登録
+Responsibilities:
 
-* `Engine`, `Config`, `Register`, `RuleOption`, `Run` の型を確定
-* ルール registry を作る（型 T ごとにリスト）
+- Traverse non-test Go files (`*_test.go` excluded).
+- Collect nodes whose concrete type matches any registered rule target type.
+- Capture mutation metadata:
+  - package ID/import path
+  - source file path
+  - AST path from file root to target node
+  - source position
+  - enclosing function (if any)
+  - compiled file path mapping
 
-### Milestone 2：go/packages ロード + テスト抽出
+### 4.4 Rule application and AST replacement in `Engine.Run`
 
-* `packages.Load(Tests:true)` を実装
-* テスト関数一覧 `[]TestRef` を取れるようにする
+Per mutation point and matching rule:
 
-### Milestone 3：MutationPoint 抽出
+1. Shallow-copy target node with `astcow.ShallowCopyNode`.
+2. Build callback context (`Fset`, package, file, types info, path).
+3. Execute rule callback through `applyRule`, which recovers panics and converts them to errors.
+4. If callback changed node:
+   - clone path and replace one node with `astcow.ClonePath`
+   - build file-level mutant AST
+5. Emit immediate `Errored` result when any step fails.
 
-* AST traversal で `MutationPoint` を収集
-* path stack と enclosing func の保持
+Invariant:
 
-### Milestone 4：CoW（まずは手書きでも可→後で生成へ）
+- One generated mutant corresponds to one mutation point and one node replacement.
 
-* 最初は対象ノード種を限定して手書きで `shallowCopy/replaceChild` を作って動かす
-* 動いたら `go generate` で全 `go/ast` 対応へ拡張
+### 4.5 `internal/mutantbuild`
 
-### Milestone 5：Overlay生成 + `go test -overlay` 単体実行
+Responsibilities:
 
-* 1ミュータントを temp に書き出し、手動で `go test -overlay` が動くことを確認
-* `TMPDIR` の設定もここで確認
+- Create per-mutant temp directory (`graft-<id>-*` prefix when ID is available).
+- Create:
+  - `overlay/` for mutated files
+  - `tmp/` for mutant-local `TMPDIR`
+- Format mutated AST via `go/format` and write file.
+- Write `overlay.json`:
 
-### Milestone 6：Runner（worker pool）実装
-
-* `Workers` 個の goroutine
-* mutant キューから取り出して `go test` を回す
-* タイムアウト/Killed/Survived の判定
-
-### Milestone 7：`-run` で関数単位に絞る + `-failfast` + `-parallel=1`
-
-* パッケージごとに regex を作って実行
-* まずは「全テスト」→次に「指定テスト」へ段階的に
-
-### Milestone 8：テスト選択（Hybrid）導入
-
-* まずは Phase 3 のみ（依存パッケージの全テスト）で cap を実装し、動作確認
-* 次に callgraph（CHA）を入れる
-* 最後に副作用エッジを入れる（爆発してもDAGでcapされる）
-
----
-
-## 10. 参考：主要フロー疑似コード
-
-### 10.1 Run 全体
-
-```go
-func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error) {
-    proj := LoadProject(patterns)         // go/packages
-    tests := DiscoverTests(proj)          // []TestRef
-    graphs := PrecomputeGraphs(proj, tests) // deps, callgraph, side-effects
-
-    points := FindMutationPoints(proj, e.rules)
-    workCh := make(chan MutationPoint)
-    resultCh := make(chan MutantResult)
-
-    startWorkers(e.Config.Workers, workCh, resultCh, graphs, e.Config)
-
-    for _, p := range points {
-        select { case <-runCtx.Done(): break }
-        workCh <- p
-    }
-    close(workCh)
-
-    report := CollectResults(resultCh)
-    return report, nil
+```json
+{
+  "Replace": {
+    "<original-compiled-go-file>": "<mutated-file-path>"
+  }
 }
 ```
 
-### 10.2 MutationPoint → Mutant（1ノード×1ルール）
+### 4.6 `internal/testselect`
 
-```go
-for each rule applicable to point.Node:
-    ctx := NewContext(point, proj.TypesInfo, path, cloneMap)
-    nodeCopy := ShallowCopy(point.Node) // engine側
-    mutated, ok := rule(ctx, nodeCopy)
-    if !ok { continue }
+Responsibilities:
 
-    fileMut := CoWCloneFile(point.Path, point.Node, mutated, ctx.cloneMap)
-    mutant := BuildOverlayAndMutant(fileMut, point, rule)
-    mutant.TestsByPackage = SelectTests(mutant, graphs) // hybrid
-    enqueue(mutant)
+1. Build reverse callers from AST-level call inspection.
+2. Use mutation-point enclosing function as reachability seed.
+3. Collect candidate tests reachable through reverse calls.
+4. Fallback to all discovered tests when no candidate is found.
+5. Prune candidates by reverse package dependencies from mutant package.
+6. Group selected tests as `map[importPath][]testName` with sorted unique names.
+
+Design choice:
+
+- Fallback behavior intentionally avoids over-pruning when static call analysis misses edges.
+
+### 4.7 `internal/runner`
+
+Responsibilities:
+
+- Execute mutants using worker pool (`Workers`).
+- For each mutant:
+  - If selected test groups are empty, return `Unsupported`.
+  - Execute selected packages in sorted order.
+  - Build package-specific `-run` regex using escaped, sorted test names.
+  - Run `go test` with fixed options:
+
+```text
+go test <pkg> -run <regex> -failfast -parallel=1 -count=1 -overlay=<overlay.json>
 ```
 
----
+Runtime behavior:
 
-## 11. 実装上の注意（落とし穴）
+- `TMPDIR` is set to mutant temp `tmp/`.
+- Timeout is enforced per mutant package command via `context.WithTimeout`.
+- First failing package marks mutant as `Killed` and stops that mutant run.
+- Timeout is represented as `Killed` with `TimedOut=true`.
+- Temp directory is removed unless `KeepTemp=true`.
 
-* **sliceフィールドの差し替えは必ず slice コピー**（CoWの要）
-* `packages.Package.CompiledGoFiles` の絶対パスを overlay のキーに使う（ズレ防止）
-* `-run` regex は `regexp.QuoteMeta` を使う（安全）
-* `go test` 出力は killed の解析に重要。stdout/stderr を保存する
-* `KeepTemp` を用意して、失敗ミュータントを再現しやすくする
+### 4.8 `internal/reporting` and report composition
 
----
+Responsibilities:
 
-## 12. この設計で守るもの（最重要）
+- Summarize counts by internal mutant status.
+- Map internal statuses to public `Status`.
+- Emit per-mutant details:
+  - location (`file`, `line`, `column`, package)
+  - rule name and ID
+  - executed packages and run patterns
+  - failure command/output
+  - timeout and elapsed time
 
-* **Survived 誤報で信頼を壊さない**
-  → 保証外は Unsupported に逃がす
-* **並列安全とデバッグ容易性**
-  → 1mutant=1temp、-parallel=1、外側ワーカーのみ並列
-* **ユーザーDX**
-  → Generics + `*Context` + CoW の安全な AST 変形
+## 5. Reliability and Status Semantics
+
+Status intent:
+
+- `Killed`: mutation was detected by selected tests (including timeout-induced failure).
+- `Survived`: selected tests all passed.
+- `Unsupported`: no reliable verdict (for example, empty selection).
+- `Errored`: framework failed to build or prepare mutant execution.
+
+Important rule:
+
+- `Unsupported` is never merged into `Survived`.
+- This separation avoids false confidence in mutation score.
+
+## 6. Current Limitations
+
+- Call analysis for test selection is AST-based and conservative.
+- Dynamic behaviors (reflection, advanced indirection patterns, complex dispatch) can reduce precision.
+- `WithDeepCopy()` is not yet behaviorally applied in the execution pipeline.
+- Mutation is limited to one-node replacement per generated mutant.
+
+## 7. Debug and Development Notes
+
+- Set `GO_GRAFT_DEBUG` to print mutation-test auto-exclusion details.
+- Set `Config{KeepTemp: true}` to keep mutant temp directories for reproduction/debugging.
+- Standard repository checks:
+  - `go vet ./...`
+  - `go test ./...`
