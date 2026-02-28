@@ -187,7 +187,14 @@ func resolveCall(currentPkgID string, call *ast.CallExpr, aliases map[string]str
 		if len(candidates) == 0 {
 			return functionKey{}, false
 		}
-		return functionKey{pkgID: candidates[0], name: fun.Sel.Name}, true
+		ordered := append([]string(nil), candidates...)
+		slices.Sort(ordered)
+		for _, candidate := range ordered {
+			if candidate == currentPkgID {
+				return functionKey{pkgID: candidate, name: fun.Sel.Name}, true
+			}
+		}
+		return functionKey{pkgID: ordered[0], name: fun.Sel.Name}, true
 	default:
 		return functionKey{}, false
 	}

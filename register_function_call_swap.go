@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"path"
 	"reflect"
 	"runtime"
 	"strings"
@@ -114,37 +113,57 @@ func parsePackageFunctionName(runtimeName string) (pkgPath string, functionName 
 		return "", "", false
 	}
 
-	prefix, afterSlash := path.Split(runtimeName)
+	lastSlash := strings.LastIndex(runtimeName, "/")
+	prefix := ""
+	afterSlash := runtimeName
+	if lastSlash >= 0 {
+		prefix = runtimeName[:lastSlash+1]
+		afterSlash = runtimeName[lastSlash+1:]
+	}
 	if afterSlash == "" {
 		return "", "", false
 	}
 
-	pkgElem, rawName, found := strings.Cut(afterSlash, ".")
-	if !found || pkgElem == "" || rawName == "" {
-		return "", "", false
+	for i := 0; i < len(afterSlash); i++ {
+		if afterSlash[i] != '.' {
+			continue
+		}
+		pkgElem := afterSlash[:i]
+		rawName := afterSlash[i+1:]
+		if pkgElem == "" || rawName == "" {
+			continue
+		}
+		if strings.ContainsAny(pkgElem, "()") {
+			continue
+		}
+		funcName, ok := parseRuntimeFunctionName(rawName)
+		if !ok {
+			continue
+		}
+		fullPkgPath := strings.Join([]string{prefix, pkgElem}, "")
+		if fullPkgPath == "" {
+			return "", "", false
+		}
+		return fullPkgPath, funcName, true
 	}
+	return "", "", false
+}
 
+func parseRuntimeFunctionName(rawName string) (string, bool) {
 	funcName, typeArgTail, hasTypeArgs := strings.Cut(rawName, "[")
 	if hasTypeArgs {
 		if typeArgTail == "" || !strings.HasSuffix(typeArgTail, "]") {
-			return "", "", false
+			return "", false
 		}
 		rawName = funcName
 	}
 	if strings.ContainsAny(rawName, ".()") {
-		return "", "", false
+		return "", false
 	}
-
 	if rawName == "" || !token.IsIdentifier(rawName) {
-		return "", "", false
+		return "", false
 	}
-
-	fullPkgPath := strings.Join([]string{prefix, pkgElem}, "")
-	if fullPkgPath == "" {
-		return "", "", false
-	}
-
-	return fullPkgPath, rawName, true
+	return rawName, true
 }
 
 func calledFunctionObject(info *types.Info, fun ast.Expr) (*types.Func, bool) {

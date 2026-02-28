@@ -97,3 +97,27 @@ func TestSelectReturnsEmptyWhenNoDependentTests(t *testing.T) {
 		t.Fatalf("selected map should be empty, got %v", selected.ByImportPath)
 	}
 }
+
+func TestResolveCallPrefersCurrentPackageIDWhenImportPathHasMultipleCandidates(t *testing.T) {
+	call := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   ast.NewIdent("dep"),
+			Sel: ast.NewIdent("Target"),
+		},
+	}
+	aliases := map[string]string{
+		"dep": "example.com/dep",
+	}
+	byImport := map[string][]string{
+		"example.com/dep": {"example.com/dep.test", "example.com/dep"},
+	}
+
+	got, ok := resolveCall("example.com/dep", call, aliases, byImport)
+	if !ok {
+		t.Fatal("resolveCall() should resolve selector call")
+	}
+	want := functionKey{pkgID: "example.com/dep", name: "Target"}
+	if got != want {
+		t.Fatalf("resolveCall() = %+v, want %+v", got, want)
+	}
+}
