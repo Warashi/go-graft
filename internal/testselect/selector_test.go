@@ -115,7 +115,7 @@ func TestUnrelated(t *testing.T) {}
 		t.Fatalf("Load() error = %v", err)
 	}
 	tests := testdiscover.Discover(project)
-	points := mutationpoint.Collect(project, []reflect.Type{reflect.TypeOf(&ast.BasicLit{})})
+	points := mutationpoint.Collect(project, []reflect.Type{reflect.TypeFor[*ast.BasicLit]()})
 	point, ok := findPointInFunc(points, "Do")
 	if !ok {
 		t.Fatal("mutation point in Do not found")
@@ -168,7 +168,7 @@ func EntryUnrelated() int { return 0 }
 		{PkgID: pkg.ID, ImportPath: pkg.ImportPath, Name: "EntryReachable"},
 		{PkgID: pkg.ID, ImportPath: pkg.ImportPath, Name: "EntryUnrelated"},
 	}
-	points := mutationpoint.Collect(project, []reflect.Type{reflect.TypeOf(&ast.BasicLit{})})
+	points := mutationpoint.Collect(project, []reflect.Type{reflect.TypeFor[*ast.BasicLit]()})
 	point, ok := findPointInFunc(points, "callee")
 	if !ok {
 		t.Fatal("mutation point in callee not found")

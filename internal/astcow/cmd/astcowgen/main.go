@@ -92,8 +92,7 @@ func collectMetadata() ([]typeMeta, error) {
 		}
 
 		fields := make([]fieldMeta, 0, st.NumFields())
-		for i := 0; i < st.NumFields(); i++ {
-			field := st.Field(i)
+		for field := range st.Fields() {
 			kind := classifyField(field.Type(), nodeIface)
 			fields = append(fields, fieldMeta{
 				Name:        field.Name(),

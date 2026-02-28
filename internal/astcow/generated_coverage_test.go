@@ -143,8 +143,7 @@ func collectGeneratedMetaFromGoAst() ([]generatedTypeMeta, error) {
 		}
 
 		fields := make([]generatedFieldMeta, 0, st.NumFields())
-		for i := 0; i < st.NumFields(); i++ {
-			field := st.Field(i)
+		for field := range st.Fields() {
 			fields = append(fields, generatedFieldMeta{
 				Name: field.Name(),
 				Kind: classifyGeneratedField(field.Type(), nodeIface),
@@ -195,11 +194,11 @@ func extractCaseBody(t *testing.T, fnSrc string, typeName string) string {
 	t.Helper()
 
 	caseHeader := "\tcase *ast." + typeName + ":"
-	start := strings.Index(fnSrc, caseHeader)
-	if start < 0 {
+	_, after, ok := strings.Cut(fnSrc, caseHeader)
+	if !ok {
 		t.Fatalf("missing case for %s", typeName)
 	}
-	rest := fnSrc[start+len(caseHeader):]
+	rest := after
 
 	nextCase := strings.Index(rest, "\n\tcase *ast.")
 	defaultCase := strings.Index(rest, "\n\tdefault:")

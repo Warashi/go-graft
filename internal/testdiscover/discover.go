@@ -221,12 +221,7 @@ func reachesEngineRun(start functionKey, infos map[functionKey]*functionInfo) bo
 		if info.hasEngineRun {
 			return true
 		}
-		for _, callee := range info.calls {
-			if visit(callee) {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(info.calls, visit)
 	}
 	return visit(start)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -126,10 +127,8 @@ func writeFile(t *testing.T, path string, content string) {
 
 func assertCommandContains(t *testing.T, command []string, want string) {
 	t.Helper()
-	for _, part := range command {
-		if part == want {
-			return
-		}
+	if slices.Contains(command, want) {
+		return
 	}
 	t.Fatalf("command %v does not contain %q", strings.Join(command, " "), want)
 }

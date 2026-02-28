@@ -46,9 +46,7 @@ func (r Runner) Run(ctx context.Context, mutants []model.Mutant) []model.MutantE
 
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for j := range jobs {
 				res := runOne(ctx, j.mutant, timeout, r.KeepTemp)
 				results <- struct {
@@ -56,7 +54,7 @@ func (r Runner) Run(ctx context.Context, mutants []model.Mutant) []model.MutantE
 					result model.MutantExecResult
 				}{index: j.index, result: res}
 			}
-		}()
+		})
 	}
 
 	go func() {

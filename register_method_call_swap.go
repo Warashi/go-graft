@@ -142,7 +142,7 @@ func parseReceiverFromFuncType(recv reflect.Type) (pkgPath string, typeName stri
 
 func parseMethodName(runtimeName string, recvPkgPath string, recvTypeName string) (string, bool) {
 	ptrPrefix := recvPkgPath + ".(*" + recvTypeName + ")."
-	if method := strings.TrimPrefix(runtimeName, ptrPrefix); method != runtimeName {
+	if method, ok := strings.CutPrefix(runtimeName, ptrPrefix); ok {
 		if method == "" || strings.Contains(method, ".") {
 			return "", false
 		}
@@ -150,7 +150,7 @@ func parseMethodName(runtimeName string, recvPkgPath string, recvTypeName string
 	}
 
 	valuePrefix := recvPkgPath + "." + recvTypeName + "."
-	if method := strings.TrimPrefix(runtimeName, valuePrefix); method != runtimeName {
+	if method, ok := strings.CutPrefix(runtimeName, valuePrefix); ok {
 		if method == "" || strings.Contains(method, ".") {
 			return "", false
 		}
