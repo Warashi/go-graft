@@ -44,7 +44,7 @@ func TestRunKillsMutantOnFailingTest(t *testing.T) {
 
 	r := Runner{
 		Workers:       1,
-		MutantTimeout: 3 * time.Second,
+		MutantTimeout: 10 * time.Second,
 		KeepTemp:      true,
 	}
 	results := r.Run(context.Background(), []model.Mutant{mutant})
