@@ -97,6 +97,7 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 			}
 			callbackCtx.File = point.File
 			callbackCtx.Path = append([]ast.Node(nil), point.Path...)
+			callbackCtx.setOriginal(nodeInput, point.Node)
 
 			mutatedNode, changed, mutateErr := applyRule(rule, callbackCtx, nodeInput)
 			if mutateErr != nil {

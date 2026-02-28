@@ -122,6 +122,54 @@ func TestEngineRunProvidesPackagesPackageInContext(t *testing.T) {
 	}
 }
 
+func TestEngineRunTypeOfWorksOnCallbackNode(t *testing.T) {
+	moduleDir := t.TempDir()
+	writeModuleFile(t, moduleDir, "go.mod", "module example.com/m\n\ngo 1.26.0\n")
+	writeModuleFile(t, moduleDir, "p/add.go", "package p\n\nfunc Add(a, b int) int { return a + b }\n")
+	writeModuleFile(t, moduleDir, "p/add_test.go", "package p\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 1) != 2 {\n\t\tt.Fatal(\"bad\")\n\t}\n}\n")
+
+	e := New(Config{
+		Workers:       1,
+		MutantTimeout: 5 * time.Second,
+	})
+
+	var sawTypeOnCallbackNode bool
+	Register[*ast.BinaryExpr](e, func(c *Context, n *ast.BinaryExpr) (*ast.BinaryExpr, bool) {
+		if n.Op != token.ADD {
+			return nil, false
+		}
+		typ := c.TypeOf(n)
+		if typ == nil {
+			return nil, false
+		}
+		if typ.String() != "int" {
+			return nil, false
+		}
+		sawTypeOnCallbackNode = true
+		return &ast.BinaryExpr{
+			X:  n.X,
+			Op: token.SUB,
+			Y:  n.Y,
+		}, true
+	}, WithName("typed-add-to-sub-replace"))
+
+	report := runInDir(t, moduleDir, func() (*Report, error) {
+		return e.Run(context.Background(), "./...")
+	})
+	if report.Total == 0 {
+		t.Fatalf("total = %d, want > 0 (report=%+v)", report.Total, report)
+	}
+	if report.Killed == 0 {
+		t.Fatalf("killed = %d, want > 0 (report=%+v)", report.Killed, report)
+	}
+	if report.Errored != 0 {
+		t.Fatalf("errored = %d, want 0 (report=%+v)", report.Errored, report)
+	}
+	if !sawTypeOnCallbackNode {
+		t.Fatal("expected ctx.TypeOf(n) to resolve callback node type")
+	}
+}
+
 func TestEngineRunSkipsMutationsInTestFiles(t *testing.T) {
 	moduleDir := t.TempDir()
 	writeModuleFile(t, moduleDir, "go.mod", "module example.com/m\n\ngo 1.26.0\n")
