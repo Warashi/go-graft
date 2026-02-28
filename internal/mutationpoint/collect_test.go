@@ -74,3 +74,53 @@ func Foo() int {
 		t.Fatalf("line match failed: foundTop=%v foundFoo=%v", foundTop, foundFoo)
 	}
 }
+
+func TestCollectSkipsTestGoFiles(t *testing.T) {
+	const prodSrc = `package p
+var top = 1 + 2
+`
+	const testSrc = `package p
+import "testing"
+
+func TestTop(t *testing.T) {
+	_ = 3 + 4
+}
+`
+
+	prodPath := filepath.Clean("/tmp/p.go")
+	testPath := filepath.Clean("/tmp/p_test.go")
+
+	fset := token.NewFileSet()
+	prodFile, err := parser.ParseFile(fset, prodPath, prodSrc, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("ParseFile(prod) error = %v", err)
+	}
+	testFile, err := parser.ParseFile(fset, testPath, testSrc, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("ParseFile(test) error = %v", err)
+	}
+
+	project := &model.Project{
+		Packages: []*model.Package{
+			{
+				ID:              "p",
+				ImportPath:      "example.com/p",
+				GoFiles:         []string{prodPath, testPath},
+				CompiledGoFiles: []string{prodPath, testPath},
+				Fset:            fset,
+				SyntaxByPath: map[string]*ast.File{
+					prodPath: prodFile,
+					testPath: testFile,
+				},
+			},
+		},
+	}
+
+	points := Collect(project, []reflect.Type{reflect.TypeFor[*ast.BinaryExpr]()})
+	if len(points) != 1 {
+		t.Fatalf("Collect() points = %d, want 1", len(points))
+	}
+	if got := filepath.Base(points[0].FilePath); got != "p.go" {
+		t.Fatalf("point file = %q, want %q", got, "p.go")
+	}
+}

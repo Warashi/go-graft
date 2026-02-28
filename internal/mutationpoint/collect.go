@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"github.com/Warashi/go-graft/internal/model"
 )
@@ -23,6 +24,9 @@ func Collect(project *model.Project, targetTypes []reflect.Type) []model.Mutatio
 	points := make([]model.MutationPoint, 0)
 	for _, pkg := range project.Packages {
 		for _, filePath := range pkg.GoFiles {
+			if isTestGoFile(filePath) {
+				continue
+			}
 			file := pkg.SyntaxByPath[filePath]
 			if file == nil {
 				continue
@@ -86,4 +90,8 @@ func resolveCompiledFile(pkg *model.Package, filePath string) string {
 		}
 	}
 	return filePath
+}
+
+func isTestGoFile(path string) bool {
+	return strings.HasSuffix(filepath.Base(path), "_test.go")
 }
