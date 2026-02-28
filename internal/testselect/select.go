@@ -118,15 +118,15 @@ func buildReverseCallers(project *model.Project) map[functionKey][]functionKey {
 			if file == nil {
 				continue
 			}
-				if _, ok := importAliases[pkg.ID]; !ok {
-					importAliases[pkg.ID] = map[string]string{}
-				}
-				aliasMap := importAliases[pkg.ID]
-				for alias, importPath := range callresolve.ImportAliases(file) {
-					aliasMap[alias] = importPath
-				}
-				for _, decl := range file.Decls {
-					fn, ok := decl.(*ast.FuncDecl)
+			if _, ok := importAliases[pkg.ID]; !ok {
+				importAliases[pkg.ID] = map[string]string{}
+			}
+			aliasMap := importAliases[pkg.ID]
+			for alias, importPath := range callresolve.ImportAliases(file) {
+				aliasMap[alias] = importPath
+			}
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
 				if !ok || fn.Name == nil || fn.Body == nil {
 					continue
 				}

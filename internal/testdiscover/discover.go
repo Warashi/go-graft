@@ -135,7 +135,7 @@ func collectFunctions(project *model.Project) (map[functionKey]*functionInfo, []
 			if file == nil {
 				continue
 			}
-				aliases := callresolve.ImportAliases(file)
+			aliases := callresolve.ImportAliases(file)
 			for _, decl := range file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if !ok || fn.Name == nil || fn.Body == nil {

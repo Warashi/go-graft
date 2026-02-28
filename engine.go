@@ -12,13 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Warashi/go-graft/internal/astcow"
 	"github.com/Warashi/go-graft/internal/model"
-	"github.com/Warashi/go-graft/internal/mutantbuild"
 	"github.com/Warashi/go-graft/internal/mutationpoint"
-	"github.com/Warashi/go-graft/internal/projectload"
 	"github.com/Warashi/go-graft/internal/reporting"
-	"github.com/Warashi/go-graft/internal/runner"
 	"github.com/Warashi/go-graft/internal/testdiscover"
 	"github.com/Warashi/go-graft/internal/testselect"
 )
@@ -50,116 +46,14 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 		return &Report{}, nil
 	}
 
-	workDir, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("graft: getwd: %w", err)
-	}
-
-	project, err := (projectload.Loader{Dir: workDir}).Load(runCtx, patterns...)
+	prepared, err := e.loadProjectAndSelector(runCtx, patterns...)
 	if err != nil {
 		return nil, err
 	}
-	discovered := testdiscover.DiscoverDetailed(project)
-	if debugEnabled() {
-		writeExcludedMutationTestsDebug(os.Stderr, discovered.Excluded)
-	}
-	tests := discovered.Included
-	selector := testselect.NewSelectorWithOptions(project, tests, testselect.SelectorOptions{
-		CallGraphMode: mapCallGraphMode(e.Config.TestSelectionCallGraph),
-	})
-	if debugEnabled() {
-		writeTestSelectionCallGraphDebug(os.Stderr, selector)
-	}
-	points := mutationpoint.Collect(project, registry.targetTypes())
-
-	builder := mutantbuild.Builder{BaseTempDir: e.Config.BaseTempDir}
-	baseResults := make([]model.MutantExecResult, 0)
-	runMutants := make([]model.Mutant, 0)
-	mutantSeq := 1
-
-	for _, point := range points {
-		rules := registry.byType[reflect.TypeOf(point.Node)]
-		if len(rules) == 0 {
-			continue
-		}
-		pkg := project.ByID[point.PkgID]
-		fset := pointFileSet(pkg)
-
-		for _, rule := range rules {
-			mutantID := "m-" + itoa(mutantSeq)
-			mutantSeq++
-
-			callbackCtx := newContext()
-			if pkg != nil {
-				callbackCtx.Fset = pkg.Fset
-				callbackCtx.Pkg = pkg.Raw
-				callbackCtx.Types = pkg.TypesInfo
-			}
-			callbackCtx.File = point.File
-			callbackCtx.Path = append([]ast.Node(nil), point.Path...)
-
-			var nodeInput ast.Node
-			if rule.deepCopy {
-				deepCopied, cloneMap, err := astcow.DeepCopyNode(point.Node)
-				if err != nil {
-					baseResults = append(baseResults, buildImmediateResult(mutantID, rule.name, point, model.MutantErrored, err.Error()))
-					continue
-				}
-				nodeInput = deepCopied
-				for clone, original := range cloneMap {
-					callbackCtx.setOriginal(clone, original)
-				}
-			} else {
-				nodeInput = astcow.ShallowCopyNode(point.Node)
-				if nodeInput == nil {
-					baseResults = append(baseResults, buildImmediateResult(mutantID, rule.name, point, model.MutantErrored, "unsupported mutation node type"))
-					continue
-				}
-				callbackCtx.setOriginal(nodeInput, point.Node)
-			}
-
-			mutatedNode, changed, mutateErr := applyRule(rule, callbackCtx, nodeInput)
-			if mutateErr != nil {
-				baseResults = append(baseResults, buildImmediateResult(mutantID, rule.name, point, model.MutantErrored, mutateErr.Error()))
-				continue
-			}
-			if !changed {
-				continue
-			}
-
-			fileMut, cloneMap, err := astcow.ClonePath(point.Path, point.Node, mutatedNode)
-			if err != nil {
-				baseResults = append(baseResults, buildImmediateResult(mutantID, rule.name, point, model.MutantErrored, err.Error()))
-				continue
-			}
-			callbackCtx.cloneMap = cloneMap
-
-			mutant, err := builder.Build(mutantbuild.Input{
-				ID:         mutantID,
-				RuleName:   rule.name,
-				Point:      point,
-				Mutated:    fileMut,
-				Fset:       fset,
-				BaseTempID: mutantID,
-			})
-			if err != nil {
-				baseResults = append(baseResults, buildImmediateResult(mutantID, rule.name, point, model.MutantErrored, err.Error()))
-				continue
-			}
-			mutant.WorkDir = workDir
-			mutant.SelectedTests = selector.Select(point)
-			runMutants = append(runMutants, *mutant)
-		}
-	}
-
-	runResults := runner.Runner{
-		Workers:       e.Config.Workers,
-		MutantTimeout: e.Config.MutantTimeout,
-		KeepTemp:      e.Config.KeepTemp,
-	}.Run(runCtx, runMutants)
-
-	allResults := append(baseResults, runResults...)
-	return composeReport(allResults), nil
+	points := mutationpoint.Collect(prepared.project, registry.targetTypes())
+	baseResults, runMutants := e.buildMutants(prepared.workDir, prepared.project, prepared.selector, registry, points)
+	runResults := e.runMutants(runCtx, runMutants)
+	return composeReport(append(baseResults, runResults...)), nil
 }
 
 func (e *Engine) snapshotRegistry() ruleRegistry {
