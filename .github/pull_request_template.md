@@ -9,7 +9,7 @@
 - [ ] Ran `go vet ./...`
 - [ ] Ran `go test ./...`
 - [ ] Updated docs if public behavior changed
-- [ ] Updated `CHANGELOG.md` if release notes are affected
+- [ ] Added release-note context in PR description when needed
 
 ## Validation
 

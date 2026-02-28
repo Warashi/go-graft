@@ -6,7 +6,7 @@ Thanks for your interest in contributing.
 
 - This project is currently in `v0`.
 - Breaking changes are allowed while APIs and behavior are being stabilized.
-- Public API candidates are documented in `AGENTS.md`.
+- Public API and current behavior are documented in `README.md` and `docs/design.md`.
 
 ## Development setup
 

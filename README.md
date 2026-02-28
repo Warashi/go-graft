@@ -87,9 +87,9 @@ Set `Config{KeepTemp: true}` and inspect temporary mutant directories and comman
 
 ## Design docs
 
-- [Architecture summary](docs/design-summary.md)
-- [Test selection strategy summary](docs/design-pruning-summary.md)
-- [Detailed design document](docs/design.md)
+- [Current architecture summary](docs/design-summary.md)
+- [Current test selection strategy](docs/design-pruning-summary.md)
+- [Current detailed design](docs/design.md)
 
 ## Contributing and security
 
