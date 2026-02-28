@@ -8,33 +8,7 @@ It can run mutants in parallel without rewriting your original source files.
 - Current maturity: `v0` (pre-1.0)
 - Breaking changes may happen while APIs and behavior are being stabilized.
 
-## Installation
-
-Install CLI:
-
-```bash
-go install github.com/Warashi/go-graft/cmd/go-graft@latest
-```
-
-## CLI quick start
-
-Run mutation testing for all packages in the current module:
-
-```bash
-go-graft ./...
-```
-
-If no package pattern is provided, CLI defaults to `./...`.
-
-Main flags:
-
-- `-workers`: number of concurrent `go test` worker processes (default: `1`)
-- `-timeout`: timeout per mutant (default: `30s`)
-- `-base-temp-dir`: base directory for mutant temporary files
-- `-keep-temp`: keep mutant temp directories for debugging
-- `-builtin-add-to-sub`: enable builtin `+ -> -` mutation rule (default: `true`)
-
-## Library quick start
+## Quick start (library)
 
 ```go
 package main
@@ -109,7 +83,7 @@ This is intentionally separated from `Survived` to avoid false confidence.
 
 ### How do I debug mutant execution?
 
-Use `-keep-temp` and inspect temporary mutant directories and command output.
+Set `Config{KeepTemp: true}` and inspect temporary mutant directories and command output.
 
 ## Design docs
 
