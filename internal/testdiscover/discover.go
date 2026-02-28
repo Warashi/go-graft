@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/types"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -11,11 +12,59 @@ import (
 	"github.com/Warashi/go-graft/internal/model"
 )
 
+const (
+	ExcludeReasonAutoRunReachable = "auto-run-reachable"
+	ExcludeReasonDirectiveExclude = "directive-exclude"
+)
+
+type ExcludedTest struct {
+	Ref    model.TestRef
+	Reason string
+}
+
+type Result struct {
+	Included []model.TestRef
+	Excluded []ExcludedTest
+}
+
+type functionKey struct {
+	pkgID string
+	name  string
+}
+
+type directive int
+
+const (
+	directiveNone directive = iota
+	directiveInclude
+	directiveExclude
+)
+
+type functionInfo struct {
+	calls        []functionKey
+	hasEngineRun bool
+	directive    directive
+}
+
+type functionRecord struct {
+	key           functionKey
+	typesInfo     *types.Info
+	importAliases map[string]string
+	body          *ast.BlockStmt
+}
+
 func Discover(project *model.Project) []model.TestRef {
+	return DiscoverDetailed(project).Included
+}
+
+func DiscoverDetailed(project *model.Project) Result {
 	if project == nil {
-		return nil
+		return Result{}
 	}
-	out := make([]model.TestRef, 0)
+	out := Result{}
+	tests := make([]model.TestRef, 0)
+	infos, records := collectFunctions(project)
+
 	for _, pkg := range project.Packages {
 		for _, filePath := range pkg.GoFiles {
 			file := pkg.SyntaxByPath[filePath]
@@ -31,7 +80,7 @@ func Discover(project *model.Project) []model.TestRef {
 				if !isTopLevelTest(fn, testingAliases, pkg.TypesInfo) {
 					continue
 				}
-				out = append(out, model.TestRef{
+				tests = append(tests, model.TestRef{
 					PkgID:       pkg.ID,
 					ImportPath:  pkg.ImportPath,
 					Name:        fn.Name.Name,
@@ -41,7 +90,314 @@ func Discover(project *model.Project) []model.TestRef {
 			}
 		}
 	}
+
+	buildCalls(project, infos, records)
+	out.Included = make([]model.TestRef, 0, len(tests))
+	out.Excluded = make([]ExcludedTest, 0)
+	for _, test := range tests {
+		key := functionKey{pkgID: test.PkgID, name: test.Name}
+		info := infos[key]
+		switch resolvedDirective(info) {
+		case directiveInclude:
+			out.Included = append(out.Included, test)
+		case directiveExclude:
+			out.Excluded = append(out.Excluded, ExcludedTest{
+				Ref:    test,
+				Reason: ExcludeReasonDirectiveExclude,
+			})
+		default:
+			if reachesEngineRun(key, infos) {
+				out.Excluded = append(out.Excluded, ExcludedTest{
+					Ref:    test,
+					Reason: ExcludeReasonAutoRunReachable,
+				})
+				continue
+			}
+			out.Included = append(out.Included, test)
+		}
+	}
 	return out
+}
+
+func collectFunctions(project *model.Project) (map[functionKey]*functionInfo, []functionRecord) {
+	if project == nil {
+		return nil, nil
+	}
+	infos := make(map[functionKey]*functionInfo)
+	records := make([]functionRecord, 0)
+	for _, pkg := range project.Packages {
+		if pkg == nil {
+			continue
+		}
+		for _, filePath := range pkg.GoFiles {
+			file := pkg.SyntaxByPath[filePath]
+			if file == nil {
+				continue
+			}
+			aliases := importAliases(file)
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Name == nil || fn.Body == nil {
+					continue
+				}
+				key := functionKey{pkgID: pkg.ID, name: fn.Name.Name}
+				if _, ok := infos[key]; !ok {
+					infos[key] = &functionInfo{}
+				}
+				infos[key].directive = parseDirective(fn)
+				records = append(records, functionRecord{
+					key:           key,
+					typesInfo:     pkg.TypesInfo,
+					importAliases: aliases,
+					body:          fn.Body,
+				})
+			}
+		}
+	}
+	return infos, records
+}
+
+func buildCalls(project *model.Project, infos map[functionKey]*functionInfo, records []functionRecord) {
+	if len(infos) == 0 || len(records) == 0 {
+		return
+	}
+	byImport := make(map[string][]string)
+	for _, pkg := range project.Packages {
+		if pkg == nil {
+			continue
+		}
+		byImport[pkg.ImportPath] = append(byImport[pkg.ImportPath], pkg.ID)
+	}
+	for importPath := range byImport {
+		slices.Sort(byImport[importPath])
+	}
+
+	for _, rec := range records {
+		info := infos[rec.key]
+		if info == nil {
+			continue
+		}
+		seenCalls := make(map[functionKey]struct{})
+		ast.Inspect(rec.body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+
+			if isGoGraftEngineRunCall(call, rec.typesInfo) {
+				info.hasEngineRun = true
+			}
+			if callee, ok := resolveCallTarget(rec.key.pkgID, call, rec.typesInfo, rec.importAliases, byImport, infos); ok {
+				if _, ok := seenCalls[callee]; !ok {
+					seenCalls[callee] = struct{}{}
+					info.calls = append(info.calls, callee)
+				}
+			}
+			return true
+		})
+	}
+}
+
+func resolvedDirective(info *functionInfo) directive {
+	if info == nil {
+		return directiveNone
+	}
+	return info.directive
+}
+
+func reachesEngineRun(start functionKey, infos map[functionKey]*functionInfo) bool {
+	seen := map[functionKey]struct{}{}
+	var visit func(functionKey) bool
+	visit = func(key functionKey) bool {
+		if _, ok := seen[key]; ok {
+			return false
+		}
+		seen[key] = struct{}{}
+
+		info, ok := infos[key]
+		if !ok || info == nil {
+			return false
+		}
+		if info.hasEngineRun {
+			return true
+		}
+		for _, callee := range info.calls {
+			if visit(callee) {
+				return true
+			}
+		}
+		return false
+	}
+	return visit(start)
+}
+
+func parseDirective(fn *ast.FuncDecl) directive {
+	if fn == nil {
+		return directiveNone
+	}
+	hasInclude := hasDirective(fn.Doc, "gograft:include")
+	hasExclude := hasDirective(fn.Doc, "gograft:exclude")
+	if hasInclude {
+		return directiveInclude
+	}
+	if hasExclude {
+		return directiveExclude
+	}
+	return directiveNone
+}
+
+func hasDirective(group *ast.CommentGroup, token string) bool {
+	if group == nil || token == "" {
+		return false
+	}
+	for _, c := range group.List {
+		if c == nil {
+			continue
+		}
+		normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(c.Text), " ", ""))
+		if strings.Contains(normalized, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func importAliases(file *ast.File) map[string]string {
+	out := make(map[string]string)
+	if file == nil {
+		return out
+	}
+	for _, imp := range file.Imports {
+		if imp.Path == nil {
+			continue
+		}
+		importPath := strings.Trim(imp.Path.Value, "\"")
+		if importPath == "" {
+			continue
+		}
+		alias := filepath.Base(importPath)
+		if imp.Name != nil {
+			switch imp.Name.Name {
+			case ".", "_":
+				continue
+			default:
+				alias = imp.Name.Name
+			}
+		}
+		out[alias] = importPath
+	}
+	return out
+}
+
+func resolveCallTarget(currentPkgID string, call *ast.CallExpr, info *types.Info, aliases map[string]string, byImport map[string][]string, infos map[functionKey]*functionInfo) (functionKey, bool) {
+	if key, ok := resolveCallTargetByTypes(currentPkgID, call, info, byImport, infos); ok {
+		return key, true
+	}
+	return resolveCallTargetBySyntax(currentPkgID, call, aliases, byImport, infos)
+}
+
+func resolveCallTargetByTypes(currentPkgID string, call *ast.CallExpr, info *types.Info, byImport map[string][]string, infos map[functionKey]*functionInfo) (functionKey, bool) {
+	if info == nil || call == nil {
+		return functionKey{}, false
+	}
+
+	resolveObj := func(obj types.Object) (functionKey, bool) {
+		fn, ok := obj.(*types.Func)
+		if !ok || fn == nil || fn.Pkg() == nil {
+			return functionKey{}, false
+		}
+		sig, ok := fn.Type().(*types.Signature)
+		if !ok {
+			return functionKey{}, false
+		}
+		if sig.Recv() != nil {
+			return functionKey{}, false
+		}
+		return lookupFunctionKey(fn.Pkg().Path(), fn.Name(), currentPkgID, byImport, infos)
+	}
+
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		return resolveObj(info.Uses[fun])
+	case *ast.SelectorExpr:
+		return resolveObj(info.Uses[fun.Sel])
+	default:
+		return functionKey{}, false
+	}
+}
+
+func resolveCallTargetBySyntax(currentPkgID string, call *ast.CallExpr, aliases map[string]string, byImport map[string][]string, infos map[functionKey]*functionInfo) (functionKey, bool) {
+	if call == nil {
+		return functionKey{}, false
+	}
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		key := functionKey{pkgID: currentPkgID, name: fun.Name}
+		_, ok := infos[key]
+		return key, ok
+	case *ast.SelectorExpr:
+		pkgIdent, ok := fun.X.(*ast.Ident)
+		if !ok {
+			return functionKey{}, false
+		}
+		importPath, ok := aliases[pkgIdent.Name]
+		if !ok {
+			return functionKey{}, false
+		}
+		return lookupFunctionKey(importPath, fun.Sel.Name, currentPkgID, byImport, infos)
+	default:
+		return functionKey{}, false
+	}
+}
+
+func lookupFunctionKey(importPath string, name string, currentPkgID string, byImport map[string][]string, infos map[functionKey]*functionInfo) (functionKey, bool) {
+	pkgIDs := byImport[importPath]
+	if len(pkgIDs) == 0 {
+		return functionKey{}, false
+	}
+	for _, pkgID := range pkgIDs {
+		if pkgID != currentPkgID {
+			continue
+		}
+		key := functionKey{pkgID: pkgID, name: name}
+		if _, ok := infos[key]; ok {
+			return key, true
+		}
+	}
+	for _, pkgID := range pkgIDs {
+		key := functionKey{pkgID: pkgID, name: name}
+		if _, ok := infos[key]; ok {
+			return key, true
+		}
+	}
+	return functionKey{}, false
+}
+
+func isGoGraftEngineRunCall(call *ast.CallExpr, info *types.Info) bool {
+	if info == nil || call == nil {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil || sel.Sel.Name != "Run" {
+		return false
+	}
+	fn, ok := info.Uses[sel.Sel].(*types.Func)
+	if !ok || fn == nil || fn.Name() != "Run" {
+		return false
+	}
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return false
+	}
+	recv := types.Unalias(sig.Recv().Type())
+	if ptr, ok := recv.(*types.Pointer); ok {
+		recv = types.Unalias(ptr.Elem())
+	}
+	named, ok := recv.(*types.Named)
+	if !ok || named.Obj() == nil || named.Obj().Pkg() == nil {
+		return false
+	}
+	return named.Obj().Pkg().Path() == "github.com/Warashi/go-graft" && named.Obj().Name() == "Engine"
 }
 
 func isTopLevelTest(fn *ast.FuncDecl, testingAliases map[string]struct{}, typesInfo *types.Info) bool {
