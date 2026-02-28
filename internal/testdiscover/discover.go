@@ -9,6 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Warashi/go-graft/internal/callresolve"
 	"github.com/Warashi/go-graft/internal/model"
 )
 
@@ -134,7 +135,7 @@ func collectFunctions(project *model.Project) (map[functionKey]*functionInfo, []
 			if file == nil {
 				continue
 			}
-			aliases := importAliases(file)
+				aliases := callresolve.ImportAliases(file)
 			for _, decl := range file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if !ok || fn.Name == nil || fn.Body == nil {
@@ -161,16 +162,7 @@ func buildCalls(project *model.Project, infos map[functionKey]*functionInfo, rec
 	if len(infos) == 0 || len(records) == 0 {
 		return
 	}
-	byImport := make(map[string][]string)
-	for _, pkg := range project.Packages {
-		if pkg == nil {
-			continue
-		}
-		byImport[pkg.ImportPath] = append(byImport[pkg.ImportPath], pkg.ID)
-	}
-	for importPath := range byImport {
-		slices.Sort(byImport[importPath])
-	}
+	byImport := callresolve.BuildByImport(project)
 
 	for _, rec := range records {
 		info := infos[rec.key]
@@ -257,115 +249,15 @@ func hasDirective(group *ast.CommentGroup, token string) bool {
 	return false
 }
 
-func importAliases(file *ast.File) map[string]string {
-	out := make(map[string]string)
-	if file == nil {
-		return out
-	}
-	for _, imp := range file.Imports {
-		if imp.Path == nil {
-			continue
-		}
-		importPath := strings.Trim(imp.Path.Value, "\"")
-		if importPath == "" {
-			continue
-		}
-		alias := filepath.Base(importPath)
-		if imp.Name != nil {
-			switch imp.Name.Name {
-			case ".", "_":
-				continue
-			default:
-				alias = imp.Name.Name
-			}
-		}
-		out[alias] = importPath
-	}
-	return out
-}
-
 func resolveCallTarget(currentPkgID string, call *ast.CallExpr, info *types.Info, aliases map[string]string, byImport map[string][]string, infos map[functionKey]*functionInfo) (functionKey, bool) {
-	if key, ok := resolveCallTargetByTypes(currentPkgID, call, info, byImport, infos); ok {
-		return key, true
-	}
-	return resolveCallTargetBySyntax(currentPkgID, call, aliases, byImport, infos)
-}
-
-func resolveCallTargetByTypes(currentPkgID string, call *ast.CallExpr, info *types.Info, byImport map[string][]string, infos map[functionKey]*functionInfo) (functionKey, bool) {
-	if info == nil || call == nil {
+	resolved, ok := callresolve.ResolveFunctionCall(currentPkgID, call, info, aliases, byImport, func(key callresolve.FunctionKey) bool {
+		_, ok := infos[functionKey{pkgID: key.PkgID, name: key.Name}]
+		return ok
+	})
+	if !ok {
 		return functionKey{}, false
 	}
-
-	resolveObj := func(obj types.Object) (functionKey, bool) {
-		fn, ok := obj.(*types.Func)
-		if !ok || fn == nil || fn.Pkg() == nil {
-			return functionKey{}, false
-		}
-		sig, ok := fn.Type().(*types.Signature)
-		if !ok {
-			return functionKey{}, false
-		}
-		if sig.Recv() != nil {
-			return functionKey{}, false
-		}
-		return lookupFunctionKey(fn.Pkg().Path(), fn.Name(), currentPkgID, byImport, infos)
-	}
-
-	switch fun := call.Fun.(type) {
-	case *ast.Ident:
-		return resolveObj(info.Uses[fun])
-	case *ast.SelectorExpr:
-		return resolveObj(info.Uses[fun.Sel])
-	default:
-		return functionKey{}, false
-	}
-}
-
-func resolveCallTargetBySyntax(currentPkgID string, call *ast.CallExpr, aliases map[string]string, byImport map[string][]string, infos map[functionKey]*functionInfo) (functionKey, bool) {
-	if call == nil {
-		return functionKey{}, false
-	}
-	switch fun := call.Fun.(type) {
-	case *ast.Ident:
-		key := functionKey{pkgID: currentPkgID, name: fun.Name}
-		_, ok := infos[key]
-		return key, ok
-	case *ast.SelectorExpr:
-		pkgIdent, ok := fun.X.(*ast.Ident)
-		if !ok {
-			return functionKey{}, false
-		}
-		importPath, ok := aliases[pkgIdent.Name]
-		if !ok {
-			return functionKey{}, false
-		}
-		return lookupFunctionKey(importPath, fun.Sel.Name, currentPkgID, byImport, infos)
-	default:
-		return functionKey{}, false
-	}
-}
-
-func lookupFunctionKey(importPath string, name string, currentPkgID string, byImport map[string][]string, infos map[functionKey]*functionInfo) (functionKey, bool) {
-	pkgIDs := byImport[importPath]
-	if len(pkgIDs) == 0 {
-		return functionKey{}, false
-	}
-	for _, pkgID := range pkgIDs {
-		if pkgID != currentPkgID {
-			continue
-		}
-		key := functionKey{pkgID: pkgID, name: name}
-		if _, ok := infos[key]; ok {
-			return key, true
-		}
-	}
-	for _, pkgID := range pkgIDs {
-		key := functionKey{pkgID: pkgID, name: name}
-		if _, ok := infos[key]; ok {
-			return key, true
-		}
-	}
-	return functionKey{}, false
+	return functionKey{pkgID: resolved.PkgID, name: resolved.Name}, true
 }
 
 func isGoGraftEngineRunCall(call *ast.CallExpr, info *types.Info) bool {

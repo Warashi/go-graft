@@ -2,9 +2,9 @@ package testselect
 
 import (
 	"go/ast"
-	"path/filepath"
 	"slices"
 
+	"github.com/Warashi/go-graft/internal/callresolve"
 	"github.com/Warashi/go-graft/internal/model"
 )
 
@@ -118,26 +118,15 @@ func buildReverseCallers(project *model.Project) map[functionKey][]functionKey {
 			if file == nil {
 				continue
 			}
-			if _, ok := importAliases[pkg.ID]; !ok {
-				importAliases[pkg.ID] = map[string]string{}
-			}
-			aliasMap := importAliases[pkg.ID]
-			for _, imp := range file.Imports {
-				if imp.Path == nil {
-					continue
+				if _, ok := importAliases[pkg.ID]; !ok {
+					importAliases[pkg.ID] = map[string]string{}
 				}
-				importPath := trimQuotes(imp.Path.Value)
-				if importPath == "" {
-					continue
+				aliasMap := importAliases[pkg.ID]
+				for alias, importPath := range callresolve.ImportAliases(file) {
+					aliasMap[alias] = importPath
 				}
-				alias := filepath.Base(importPath)
-				if imp.Name != nil && imp.Name.Name != "." && imp.Name.Name != "_" {
-					alias = imp.Name.Name
-				}
-				aliasMap[alias] = importPath
-			}
-			for _, decl := range file.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
+				for _, decl := range file.Decls {
+					fn, ok := decl.(*ast.FuncDecl)
 				if !ok || fn.Name == nil || fn.Body == nil {
 					continue
 				}
@@ -146,10 +135,7 @@ func buildReverseCallers(project *model.Project) map[functionKey][]functionKey {
 		}
 	}
 
-	byImport := map[string][]string{}
-	for _, pkg := range project.Packages {
-		byImport[pkg.ImportPath] = append(byImport[pkg.ImportPath], pkg.ID)
-	}
+	byImport := callresolve.BuildByImport(project)
 
 	reverse := make(map[functionKey][]functionKey)
 	for caller, body := range funcBodies {
@@ -171,33 +157,11 @@ func buildReverseCallers(project *model.Project) map[functionKey][]functionKey {
 }
 
 func resolveCall(currentPkgID string, call *ast.CallExpr, aliases map[string]string, byImport map[string][]string) (functionKey, bool) {
-	switch fun := call.Fun.(type) {
-	case *ast.Ident:
-		return functionKey{pkgID: currentPkgID, name: fun.Name}, true
-	case *ast.SelectorExpr:
-		pkgIdent, ok := fun.X.(*ast.Ident)
-		if !ok {
-			return functionKey{}, false
-		}
-		importPath, ok := aliases[pkgIdent.Name]
-		if !ok {
-			return functionKey{}, false
-		}
-		candidates := byImport[importPath]
-		if len(candidates) == 0 {
-			return functionKey{}, false
-		}
-		ordered := append([]string(nil), candidates...)
-		slices.Sort(ordered)
-		for _, candidate := range ordered {
-			if candidate == currentPkgID {
-				return functionKey{pkgID: candidate, name: fun.Sel.Name}, true
-			}
-		}
-		return functionKey{pkgID: ordered[0], name: fun.Sel.Name}, true
-	default:
+	resolved, ok := callresolve.ResolveFunctionCall(currentPkgID, call, nil, aliases, byImport, nil)
+	if !ok {
 		return functionKey{}, false
 	}
+	return functionKey{pkgID: resolved.PkgID, name: resolved.Name}, true
 }
 
 func reverseDependers(project *model.Project, rootImportPath string) map[string]struct{} {
@@ -228,11 +192,4 @@ func reverseDependers(project *model.Project, rootImportPath string) map[string]
 		}
 	}
 	return allowed
-}
-
-func trimQuotes(v string) string {
-	if len(v) < 2 {
-		return ""
-	}
-	return v[1 : len(v)-1]
 }
