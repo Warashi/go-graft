@@ -15,12 +15,12 @@ import (
 
 type chaBackend struct {
 	backendName string
-	fset       *token.FileSet
-	pkgByID    map[string]*ssa.Package
-	reverse    map[*ssa.Function][]*ssa.Function
-	testsByFn  map[*ssa.Function][]model.TestRef
-	declToFunc map[functionDeclKey][]*ssa.Function
-	fsetByPkg  map[string]*token.FileSet
+	fset        *token.FileSet
+	pkgByID     map[string]*ssa.Package
+	reverse     map[*ssa.Function][]*ssa.Function
+	testsByFn   map[*ssa.Function][]model.TestRef
+	declToFunc  map[functionDeclKey][]*ssa.Function
+	fsetByPkg   map[string]*token.FileSet
 }
 
 type functionDeclKey struct {
@@ -99,12 +99,12 @@ func newCHABackend(project *model.Project, tests []model.TestRef) (*chaBackend, 
 
 	return &chaBackend{
 		backendName: "cha",
-		fset:       prog.Fset,
-		pkgByID:    pkgByID,
-		reverse:    reverse,
-		testsByFn:  testsByFn,
-		declToFunc: declToFunc,
-		fsetByPkg:  fsetByPkg,
+		fset:        prog.Fset,
+		pkgByID:     pkgByID,
+		reverse:     reverse,
+		testsByFn:   testsByFn,
+		declToFunc:  declToFunc,
+		fsetByPkg:   fsetByPkg,
 	}, nil
 }
 

@@ -42,4 +42,3 @@ func TestConfigWithDefaultsKeepsExplicitCallGraphMode(t *testing.T) {
 		})
 	}
 }
-
