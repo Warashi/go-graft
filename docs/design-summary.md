@@ -49,7 +49,7 @@ The engine runs the following pipeline:
 
 ## Public API Surface
 
-Current public API is intentionally small:
+Representative public API entry points (non-exhaustive):
 
 - `Engine`
 - `Register`
@@ -57,6 +57,8 @@ Current public API is intentionally small:
 - `RegisterFunctionCallSwap`
 - `Context`
 - `Report`
+
+Canonical and complete API definitions are documented in `docs/design.md` (Section 2: Public API).
 
 ## Mutation Rule Model
 
