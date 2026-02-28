@@ -15,18 +15,18 @@ type functionKey struct {
 
 // Selector picks tests for mutation points in one loaded project.
 type Selector struct {
-	project        *model.Project
-	tests          []model.TestRef
-	astCallersBack map[functionKey][]functionKey
+	project       *model.Project
+	tests         []model.TestRef
+	backend       selectorBackend
+	backendName   string
+	buildFailures []string
 }
 
 // NewSelector creates a selector and caches AST-level reverse callers.
 func NewSelector(project *model.Project, tests []model.TestRef) *Selector {
-	return &Selector{
-		project:        project,
-		tests:          append([]model.TestRef(nil), tests...),
-		astCallersBack: buildReverseCallers(project),
-	}
+	return NewSelectorWithOptions(project, tests, SelectorOptions{
+		CallGraphMode: CallGraphModeAST,
+	})
 }
 
 // Select picks tests for one mutation point.
@@ -44,7 +44,7 @@ func (s *Selector) Select(point model.MutationPoint) model.SelectedTests {
 	}
 
 	allowedPkgs := reverseDependers(s.project, point.PkgImportPath)
-	candidate := candidateTestsByReachability(s.tests, point, s.astCallersBack)
+	candidate := s.backend.candidateTests(point)
 	if len(candidate) == 0 {
 		candidate = append([]model.TestRef(nil), s.tests...)
 	}
