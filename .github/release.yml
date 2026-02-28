@@ -1,0 +1,22 @@
+changelog:
+  categories:
+    - title: "Features"
+      labels:
+        - feat
+    - title: "Fixes"
+      labels:
+        - fix
+    - title: "Documentation"
+      labels:
+        - docs
+    - title: "Tests"
+      labels:
+        - test
+    - title: "Maintenance"
+      labels:
+        - chore
+        - ci
+        - refactor
+  exclude:
+    labels:
+      - skip-changelog
