@@ -15,6 +15,7 @@
 - ミュータントは「1ミュータント = 1 mutation point（1ノード差し替え）」を前提に組み立てる。
 - 実行ステータスは `Killed` / `Survived` / `Unsupported` / `Errored` を分けて扱う。
 - テスト実行は `internal/runner` で行い、`go test` に `-overlay`, `-failfast`, `-parallel=1` を付ける。
+- `internal/testdiscover` は通常テストを抽出しつつ、`(*graft.Engine).Run` に到達可能な mutation test を自動除外し、`//gograft:include` / `//gograft:exclude` のディレクティブで上書きできる。
 - 主要処理は `internal/projectload` -> `internal/testdiscover` -> `internal/mutationpoint` -> `internal/mutantbuild` -> `internal/testselect` -> `internal/runner` -> `internal/reporting` の責務分割で構成される。
 
 ## 開発時の標準チェック
