@@ -105,6 +105,7 @@ When a backend cannot be used safely, go-graft falls back to the next backend an
 
 ## Design docs
 
+- [Documentation ownership map](docs/documentation-map.md)
 - [Current architecture summary](docs/design-summary.md)
 - [Current test selection strategy](docs/design-pruning-summary.md)
 - [Current detailed design](docs/design.md)
