@@ -6,21 +6,15 @@ Do not place user-level global preferences or rules for other projects here.
 ## Project Overview
 
 - The project is currently `v0` (pre-`v1.0.0`), so breaking changes are allowed while APIs and behavior are stabilized.
-- `go-graft` is a Go mutation testing framework built on `go test -overlay`.
-- The project is provided as a library only (no CLI).
-- Representative root-package API entry points include `Engine`, `Register`, `RegisterMethodCallSwap`, `RegisterFunctionCallSwap`, `Context`, and `Report` (non-exhaustive).
-- Canonical and complete API definitions are documented in `docs/design.md` (Section 2: Public API) and `go doc -all github.com/Warashi/go-graft`.
+- `go-graft` is a library-only Go mutation testing framework built on top of `go test -overlay`.
+- Documentation ownership is defined in `docs/documentation-map.md`.
 
-## Implementation Invariants (Current)
+## Source-of-Truth References
 
-- Mutants are built with the assumption `1 mutant = 1 mutation point` (single-node replacement).
-- Execution statuses are handled separately as `Killed`, `Survived`, `Unsupported`, and `Errored`.
-- Test execution is handled by `internal/runner`, which runs `go test` with `-overlay`, `-failfast`, `-parallel=1`, and `-count=1`.
-- Rule callback input is shallow-copied by default; `WithDeepCopy` deep-copies the callback input subtree and enables descendant clone-origin lookup through `Context.Original` / `Context.TypeOf`.
-- `internal/testdiscover` extracts regular tests and auto-excludes mutation tests that can reach `(*graft.Engine).Run`. This can be overridden with `//gograft:include` and `//gograft:exclude` directives.
-- `internal/testselect` builds one selector per run. Default call graph mode is `auto` and resolves with fallback chain `rta -> cha -> ast` (`rta`/`cha`/`ast` can also be forced by config).
-- The core flow is split by responsibility as:
-  `internal/projectload` -> `internal/testdiscover` -> `internal/mutationpoint` -> `internal/mutantbuild` -> `internal/testselect` -> `internal/runner` -> `internal/reporting`.
+- Public API, defaults, and behavior contracts: `docs/design.md` (Section 2).
+- Execution pipeline and module responsibilities: `docs/design.md` (Sections 3 and 4).
+- Status semantics and reliability boundaries: `docs/design.md` (Section 5).
+- Current limitations and debug notes: `docs/design.md` (Sections 6 and 7).
 
 ## Standard Development Checks
 
@@ -29,11 +23,12 @@ Do not place user-level global preferences or rules for other projects here.
 
 ## AGENTS.md Maintenance Requirements
 
-Update this `AGENTS.md` in the same change whenever any of the following is modified:
+Update this `AGENTS.md` and `docs/documentation-map.md` in the same change whenever any of the following is modified:
 
 - Responsibilities of major directories or the core processing flow
 - Default library behavior (major config defaults or execution flow)
 - Execution status categories or runner execution method
 - Standard lint/test check commands
+- Documentation ownership boundaries between files
 
 When updating, keep only facts that are always true for this repository, and omit temporary operational notes.

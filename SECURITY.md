@@ -4,6 +4,7 @@
 
 This project is currently in `v0`, and only the latest `main` branch is
 considered supported for security fixes.
+For compatibility policy context, see `README.md`.
 
 ## Reporting a vulnerability
 

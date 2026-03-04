@@ -4,9 +4,12 @@ Thanks for your interest in contributing.
 
 ## Scope
 
-- This project is currently in `v0`.
-- Breaking changes are allowed while APIs and behavior are being stabilized.
-- Public API and current behavior are documented in `README.md` and `docs/design.md`.
+This document covers contribution workflow only.
+For product behavior and architecture references, use:
+
+- `README.md`
+- `docs/design.md`
+- `docs/documentation-map.md`
 
 ## Development setup
 
@@ -29,13 +32,8 @@ go test ./...
 
 ## Reporting bugs
 
-Please use the bug report issue form and include:
-
-- Reproduction steps
-- Expected behavior
-- Actual behavior
-- `go version`
-- Command(s) you executed
+Please use the bug report issue form.
+The required fields are defined in `.github/ISSUE_TEMPLATE/bug_report.yml`.
 
 ## Code review expectations
 
@@ -46,4 +44,4 @@ Please use the bug report issue form and include:
 ## Security issues
 
 Do not open public issues for security vulnerabilities.
-Use the process in `SECURITY.md`.
+Use the process in `SECURITY.md` (source of truth).
