@@ -1,63 +1,43 @@
-# Test Selection Strategy (Current Implementation)
+# Test Selection Strategy (Intent and Tradeoffs)
 
 ## Objective
 
-The selection strategy balances:
+Source of truth: [docs/design.md §4.6 `internal/testselect`](design.md#46-internaltestselect).
 
-- avoiding false negatives (missing a test that could kill a mutant), and
-- reducing unnecessary test execution.
+This summary explains why test selection exists and which tradeoffs guide its design.
+Exact backend order, fallback behavior, and filtering rules are intentionally defined only in `docs/design.md`.
 
-The current implementation intentionally favors reliability over aggressive pruning.
+## Strategy Intent
 
-## Stage 1: Base Test Discovery Filter (`internal/testdiscover`)
+Source of truth: [docs/design.md §4.6 `internal/testselect`](design.md#46-internaltestselect) and [§4.2 `internal/testdiscover`](design.md#42-internaltestdiscover).
 
-Before per-mutant selection begins, go-graft discovers top-level tests and filters mutation tests:
+The strategy is designed to:
 
-- Includes normal top-level `TestXxx(*testing.T)` functions.
-- Excludes tests that can reach `(*graft.Engine).Run` through static call traversal.
-- Allows explicit overrides:
-  - `//gograft:include` forces inclusion.
-  - `//gograft:exclude` forces exclusion.
+- reduce unnecessary test execution when safe,
+- avoid missing tests that could kill mutants, and
+- prevent recursive/self-referential mutation-test execution in normal cases.
 
-This prevents dogfooding mutation tests from recursively invoking the engine unless explicitly allowed.
+## Reliability-First Policy
 
-## Stage 2: Per-Mutant Reachability (`internal/testselect`)
+Source of truth: [docs/design.md §4.6 `internal/testselect`](design.md#46-internaltestselect) and [§5 Reliability and Status Semantics](design.md#5-reliability-and-status-semantics).
 
-For each mutation point:
+When static analysis confidence is insufficient, the implementation chooses safer expansion behavior rather than aggressive pruning.
+This policy prioritizes verdict reliability over raw speed.
 
-1. Build one selector per engine run with a configured backend chain:
-   - `auto` (default): `rta -> cha -> ast`
-   - `rta`: `rta -> cha -> ast`
-   - `cha`: `cha -> ast`
-   - `ast`: AST only
-2. Use the enclosing function of the mutation point as the reachability seed.
-3. Walk reverse callers to collect reachable tests.
+## Main Tradeoffs
 
-If no tests are found through this graph, selection falls back to all discovered tests.
-This fallback avoids over-pruning from analysis blind spots.
+Source of truth: [docs/design.md §4.6 `internal/testselect`](design.md#46-internaltestselect), [§6 Current Limitations](design.md#6-current-limitations), and [§4.7 `internal/runner`](design.md#47-internalrunner).
 
-## Stage 3: Reverse Dependency Pruning (`internal/testselect`)
+1. Precision vs. coverage:
+   tighter pruning can reduce runtime but raises false-negative risk if reachability misses edges.
+2. Analysis cost vs. portability:
+   richer call-graph analysis can improve precision but may not be available for all package shapes.
+3. Pruning gains vs. operational simplicity:
+   grouping and selective execution reduce work, but conservative fallback remains necessary for safety.
 
-After candidate tests are collected:
+## Operator Guidance
 
-1. Build reverse package dependencies from loaded package imports.
-2. Keep only tests in:
-   - the mutant package, or
-   - packages that depend (directly or transitively) on the mutant package.
+Source of truth: [docs/design.md §2.1 Engine and Config](design.md#21-engine-and-config), [§4.6 `internal/testselect`](design.md#46-internaltestselect), and [§7 Debug and Development Notes](design.md#7-debug-and-development-notes).
 
-Tests in unrelated packages are safely pruned.
-
-## Stage 4: Execution Grouping (`internal/testselect` + `internal/runner`)
-
-- Selected tests are grouped by package import path.
-- Test names are sorted, deduplicated, and converted to a `-run` regex.
-- Runner executes package groups sequentially inside one mutant, while mutants run in parallel by worker pool.
-
-If no package/test entries remain, runner reports the mutant as `Unsupported` with reason `test selection produced 0 tests`.
-
-## Tradeoffs and Limits
-
-- RTA/CHA setup can fail on some package shapes; selector then falls back to the next backend and eventually AST.
-- AST call resolution remains intentionally simple (`Ident` and imported `SelectorExpr`) and is used as final fallback.
-- Dynamic dispatch patterns can still reduce precision even with CHA/RTA.
-- To avoid risky false confidence, the implementation prefers fallback expansion or `Unsupported` over claiming `Survived` on weak evidence.
+Treat this document as rationale only.
+For debugging or behavior interpretation, always follow `docs/design.md`.
