@@ -49,27 +49,17 @@ func main() {
 
 ## Execution statuses
 
-Each mutant is reported as one of the following statuses:
+Each mutant is classified into one status.
+For exact definitions and scoring semantics, see:
 
-- `Killed`: at least one selected test failed
-- `Survived`: selected tests passed, mutation was not detected
-- `Unsupported`: analysis/execution could not produce a reliable verdict
-- `Errored`: mutant generation or execution failed unexpectedly
+- [Detailed design: Report model](docs/design.md#25-report-model)
+- [Detailed design: Reliability and status semantics](docs/design.md#5-reliability-and-status-semantics)
 
 ## Public API surface
 
-Representative public API entry points (non-exhaustive):
+Use these references as the canonical API definitions:
 
-- `Engine`
-- `Register`
-- `RegisterMethodCallSwap`
-- `RegisterFunctionCallSwap`
-- `Context`
-- `Report`
-
-For the canonical, complete API definition, see:
-
-- `docs/design.md` (Section 2: Public API)
+- [Detailed design: Public API](docs/design.md#2-public-api)
 - `go doc -all github.com/Warashi/go-graft`
 
 ## Compatibility policy
@@ -85,8 +75,7 @@ It allows running mutants without modifying your original source files.
 
 ### Why are some mutants marked `Unsupported`?
 
-`Unsupported` is used when the tool cannot provide a reliable result.
-This is intentionally separated from `Survived` to avoid false confidence.
+See [Detailed design: Reliability and status semantics](docs/design.md#5-reliability-and-status-semantics).
 
 ### How do I debug mutant execution?
 
@@ -94,14 +83,7 @@ Set `Config{KeepTemp: true}` and inspect temporary mutant directories and comman
 
 ### How is the test-selection call graph chosen?
 
-Use `Config{TestSelectionCallGraph: ...}`:
-
-- `auto` (default): `rta -> cha -> ast`
-- `rta`: `rta -> cha -> ast`
-- `cha`: `cha -> ast`
-- `ast`: AST-only analysis
-
-When a backend cannot be used safely, go-graft falls back to the next backend and keeps the "no candidate => all discovered tests" safety rule.
+See [Detailed design: `internal/testselect`](docs/design.md#46-internaltestselect) for backend selection and fallback behavior.
 
 ## Design docs
 
