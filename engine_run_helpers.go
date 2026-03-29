@@ -5,12 +5,13 @@ import (
 	"errors"
 	"go/ast"
 	"os"
-	"reflect"
+	"strconv"
 
 	"github.com/Warashi/go-graft/internal/astcow"
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/mutantbuild"
 	"github.com/Warashi/go-graft/internal/project"
+	"github.com/Warashi/go-graft/internal/rule"
 	"github.com/Warashi/go-graft/internal/runner"
 	"github.com/Warashi/go-graft/internal/testdiscover"
 	"github.com/Warashi/go-graft/internal/testselect"
@@ -53,34 +54,34 @@ func (e *Engine) loadProjectAndSelector(runCtx context.Context, patterns ...stri
 	}, nil
 }
 
-func (e *Engine) buildMutants(workDir string, project *project.Project, selector *testselect.Selector, registry ruleRegistry, points []model.MutationPoint) ([]model.MutantExecResult, []model.Mutant) {
+func (e *Engine) buildMutants(workDir string, project *project.Project, selector *testselect.Selector, registry rule.Snapshot, points []model.MutationPoint) ([]model.MutantExecResult, []model.Mutant) {
 	builder := mutantbuild.Builder{BaseTempDir: e.Config.BaseTempDir}
 	baseResults := make([]model.MutantExecResult, 0)
 	runMutants := make([]model.Mutant, 0)
 	mutantSeq := 1
 
 	for _, point := range points {
-		rules := registry.byType[reflect.TypeOf(point.Node)]
+		rules := registry.RulesFor(point.Node)
 		if len(rules) == 0 {
 			continue
 		}
 		pkg := project.ByID[point.PkgID]
 		fset := pointFileSet(pkg)
 
-		for _, rule := range rules {
-			mutantID := "m-" + itoa(mutantSeq)
+		for _, ruleDef := range rules {
+			mutantID := "m-" + strconv.Itoa(mutantSeq)
 			mutantSeq++
 
 			callbackCtx := newMutationContext(pkg, point)
-			nodeInput, err := prepareRuleInput(rule, point, callbackCtx)
+			nodeInput, err := prepareRuleInput(ruleDef, point, callbackCtx)
 			if err != nil {
-				appendImmediateErrored(&baseResults, mutantID, rule.name, point, err.Error())
+				appendImmediateErrored(&baseResults, mutantID, ruleDef.Name, point, err.Error())
 				continue
 			}
 
-			mutatedNode, changed, mutateErr := applyRule(rule, callbackCtx, nodeInput)
+			mutatedNode, changed, mutateErr := rule.Apply(ruleDef, callbackCtx, nodeInput)
 			if mutateErr != nil {
-				appendImmediateErrored(&baseResults, mutantID, rule.name, point, mutateErr.Error())
+				appendImmediateErrored(&baseResults, mutantID, ruleDef.Name, point, mutateErr.Error())
 				continue
 			}
 			if !changed {
@@ -89,21 +90,23 @@ func (e *Engine) buildMutants(workDir string, project *project.Project, selector
 
 			fileMut, cloneMap, err := astcow.ClonePath(point.Path, point.Node, mutatedNode)
 			if err != nil {
-				appendImmediateErrored(&baseResults, mutantID, rule.name, point, err.Error())
+				appendImmediateErrored(&baseResults, mutantID, ruleDef.Name, point, err.Error())
 				continue
 			}
-			callbackCtx.cloneMap = cloneMap
+			for clone, original := range cloneMap {
+				callbackCtx.SetOriginal(clone, original)
+			}
 
 			mutant, err := builder.Build(mutantbuild.Input{
 				ID:         mutantID,
-				RuleName:   rule.name,
+				RuleName:   ruleDef.Name,
 				Point:      point,
 				Mutated:    fileMut,
 				Fset:       fset,
 				BaseTempID: mutantID,
 			})
 			if err != nil {
-				appendImmediateErrored(&baseResults, mutantID, rule.name, point, err.Error())
+				appendImmediateErrored(&baseResults, mutantID, ruleDef.Name, point, err.Error())
 				continue
 			}
 			mutant.WorkDir = workDir
@@ -134,14 +137,14 @@ func newMutationContext(pkg *project.Package, point model.MutationPoint) *Contex
 	return callbackCtx
 }
 
-func prepareRuleInput(rule registeredRule, point model.MutationPoint, callbackCtx *Context) (ast.Node, error) {
-	if rule.deepCopy {
+func prepareRuleInput(def rule.Definition, point model.MutationPoint, callbackCtx *Context) (ast.Node, error) {
+	if def.DeepCopy {
 		deepCopied, cloneMap, err := astcow.DeepCopyNode(point.Node)
 		if err != nil {
 			return nil, err
 		}
 		for clone, original := range cloneMap {
-			callbackCtx.setOriginal(clone, original)
+			callbackCtx.SetOriginal(clone, original)
 		}
 		return deepCopied, nil
 	}
@@ -150,7 +153,7 @@ func prepareRuleInput(rule registeredRule, point model.MutationPoint, callbackCt
 	if nodeInput == nil {
 		return nil, errUnsupportedMutationNodeType
 	}
-	callbackCtx.setOriginal(nodeInput, point.Node)
+	callbackCtx.SetOriginal(nodeInput, point.Node)
 	return nodeInput, nil
 }
 

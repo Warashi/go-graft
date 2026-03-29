@@ -3,19 +3,17 @@ package graft
 import (
 	"context"
 	"fmt"
-	"go/ast"
 	"go/token"
 	"io"
 	"os"
-	"reflect"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/mutationpoint"
 	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/reporting"
+	"github.com/Warashi/go-graft/internal/rule"
 	"github.com/Warashi/go-graft/internal/testdiscover"
 	"github.com/Warashi/go-graft/internal/testselect"
 )
@@ -24,15 +22,14 @@ import (
 type Engine struct {
 	Config Config
 
-	mu       sync.RWMutex
-	registry *ruleRegistry
+	registry *rule.Registry
 }
 
 // New creates an engine with validated defaults.
 func New(config Config) *Engine {
 	return &Engine{
 		Config:   config.withDefaults(),
-		registry: newRuleRegistry(),
+		registry: rule.NewRegistry(),
 	}
 }
 
@@ -42,8 +39,8 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 		runCtx = context.Background()
 	}
 
-	registry := e.snapshotRegistry()
-	if len(registry.ordered) == 0 {
+	registry := e.registry.Snapshot()
+	if len(registry.TargetTypes()) == 0 {
 		return &Report{}, nil
 	}
 
@@ -51,35 +48,10 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 	if err != nil {
 		return nil, err
 	}
-	points := mutationpoint.Collect(prepared.project, registry.targetTypes())
+	points := mutationpoint.Collect(prepared.project, registry.TargetTypes())
 	baseResults, runMutants := e.buildMutants(prepared.workDir, prepared.project, prepared.selector, registry, points)
 	runResults := e.runMutants(runCtx, runMutants)
 	return composeReport(append(baseResults, runResults...)), nil
-}
-
-func (e *Engine) snapshotRegistry() ruleRegistry {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	out := ruleRegistry{
-		ordered: append([]registeredRule(nil), e.registry.ordered...),
-		byType:  make(map[reflect.Type][]registeredRule, len(e.registry.byType)),
-	}
-	for key, rules := range e.registry.byType {
-		out.byType[key] = append([]registeredRule(nil), rules...)
-	}
-	return out
-}
-
-func (r ruleRegistry) targetTypes() []reflect.Type {
-	types := make([]reflect.Type, 0, len(r.byType))
-	for t := range r.byType {
-		types = append(types, t)
-	}
-	slices.SortFunc(types, func(a reflect.Type, b reflect.Type) int {
-		return compareStrings(a.String(), b.String())
-	})
-	return types
 }
 
 func compareStrings(a string, b string) int {
@@ -91,19 +63,6 @@ func compareStrings(a string, b string) int {
 	default:
 		return 0
 	}
-}
-
-func applyRule(rule registeredRule, ctx *Context, node ast.Node) (mutated ast.Node, changed bool, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("rule %q panicked: %v", rule.name, recovered)
-		}
-	}()
-	mutated, changed = rule.mutate(ctx, node)
-	if changed && mutated == nil {
-		return nil, false, fmt.Errorf("rule %q returned nil mutant node", rule.name)
-	}
-	return mutated, changed, nil
 }
 
 func pointFileSet(pkg *project.Package) *token.FileSet {

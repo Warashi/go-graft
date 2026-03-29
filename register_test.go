@@ -19,25 +19,27 @@ func TestRegisterStoresRulesByConcreteNodeType(t *testing.T) {
 		return n, true
 	})
 
-	binRules := e.registry.rulesFor(&ast.BinaryExpr{})
+	snapshot := e.registry.Snapshot()
+
+	binRules := snapshot.RulesFor(&ast.BinaryExpr{})
 	if len(binRules) != 1 {
 		t.Fatalf("binary rules count = %d, want 1", len(binRules))
 	}
-	if binRules[0].name != "binary-sub" {
-		t.Fatalf("binary rule name = %q, want %q", binRules[0].name, "binary-sub")
+	if binRules[0].Name != "binary-sub" {
+		t.Fatalf("binary rule name = %q, want %q", binRules[0].Name, "binary-sub")
 	}
-	if !binRules[0].deepCopy {
+	if !binRules[0].DeepCopy {
 		t.Fatal("binary rule deepCopy = false, want true")
 	}
 
-	unRules := e.registry.rulesFor(&ast.UnaryExpr{})
+	unRules := snapshot.RulesFor(&ast.UnaryExpr{})
 	if len(unRules) != 1 {
 		t.Fatalf("unary rules count = %d, want 1", len(unRules))
 	}
-	if unRules[0].name != "rule#1" {
-		t.Fatalf("default rule name = %q, want %q", unRules[0].name, "rule#1")
+	if unRules[0].Name != "rule#1" {
+		t.Fatalf("default rule name = %q, want %q", unRules[0].Name, "rule#1")
 	}
-	if unRules[0].deepCopy {
+	if unRules[0].DeepCopy {
 		t.Fatal("unary rule deepCopy = true, want false")
 	}
 }

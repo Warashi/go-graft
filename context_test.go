@@ -14,8 +14,8 @@ func TestContextOriginalResolvesTransitiveCloneChain(t *testing.T) {
 	clone2 := &ast.Ident{Name: "clone2"}
 
 	ctx := newContext()
-	ctx.setOriginal(clone1, original)
-	ctx.setOriginal(clone2, clone1)
+	ctx.SetOriginal(clone1, original)
+	ctx.SetOriginal(clone2, clone1)
 
 	got := ctx.Original(clone2)
 	if got != original {
@@ -33,8 +33,8 @@ func f(a int, b int) int { return a + b }
 
 	ctx := newContext()
 	ctx.Types = info
-	ctx.setOriginal(&clone1, original)
-	ctx.setOriginal(&clone2, &clone1)
+	ctx.SetOriginal(&clone1, original)
+	ctx.SetOriginal(&clone2, &clone1)
 
 	got := ctx.TypeOf(&clone2)
 	if got == nil {
@@ -50,8 +50,8 @@ func TestContextOriginalStopsOnCycle(t *testing.T) {
 	clone2 := &ast.Ident{Name: "clone2"}
 
 	ctx := newContext()
-	ctx.setOriginal(clone1, clone2)
-	ctx.setOriginal(clone2, clone1)
+	ctx.SetOriginal(clone1, clone2)
+	ctx.SetOriginal(clone2, clone1)
 
 	got := ctx.Original(clone1)
 	if got != clone1 {
