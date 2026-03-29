@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 )
 
 func TestImportAliases(t *testing.T) {
@@ -30,8 +30,8 @@ func TestImportAliases(t *testing.T) {
 }
 
 func TestBuildByImportSortsAndDeduplicates(t *testing.T) {
-	project := &model.Project{
-		Packages: []*model.Package{
+	project := &project.Project{
+		Packages: []*project.Package{
 			{ID: "b", ImportPath: "example.com/p"},
 			{ID: "a", ImportPath: "example.com/p"},
 			{ID: "a", ImportPath: "example.com/p"},

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/mutationpoint"
+	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/reporting"
 	"github.com/Warashi/go-graft/internal/testdiscover"
 	"github.com/Warashi/go-graft/internal/testselect"
@@ -105,7 +106,7 @@ func applyRule(rule registeredRule, ctx *Context, node ast.Node) (mutated ast.No
 	return mutated, changed, nil
 }
 
-func pointFileSet(pkg *model.Package) *token.FileSet {
+func pointFileSet(pkg *project.Package) *token.FileSet {
 	if pkg != nil && pkg.Fset != nil {
 		return pkg.Fset
 	}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/Warashi/go-graft/internal/callresolve"
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 )
 
 type functionKey struct {
@@ -15,7 +16,7 @@ type functionKey struct {
 
 // Selector picks tests for mutation points in one loaded project.
 type Selector struct {
-	project       *model.Project
+	project       *project.Project
 	tests         []model.TestRef
 	backend       selectorBackend
 	backendName   string
@@ -23,14 +24,14 @@ type Selector struct {
 }
 
 // NewSelector creates a selector and caches AST-level reverse callers.
-func NewSelector(project *model.Project, tests []model.TestRef) *Selector {
+func NewSelector(project *project.Project, tests []model.TestRef) *Selector {
 	return NewSelectorWithOptions(project, tests, SelectorOptions{
 		CallGraphMode: CallGraphModeAST,
 	})
 }
 
 // Select picks tests for one mutation point.
-func Select(project *model.Project, tests []model.TestRef, point model.MutationPoint) model.SelectedTests {
+func Select(project *project.Project, tests []model.TestRef, point model.MutationPoint) model.SelectedTests {
 	return NewSelector(project, tests).Select(point)
 }
 
@@ -102,7 +103,7 @@ func candidateTestsByReachability(tests []model.TestRef, point model.MutationPoi
 	return out
 }
 
-func buildReverseCallers(project *model.Project) map[functionKey][]functionKey {
+func buildReverseCallers(project *project.Project) map[functionKey][]functionKey {
 	if project == nil {
 		return nil
 	}
@@ -164,7 +165,7 @@ func resolveCall(currentPkgID string, call *ast.CallExpr, aliases map[string]str
 	return functionKey{pkgID: resolved.PkgID, name: resolved.Name}, true
 }
 
-func reverseDependers(project *model.Project, rootImportPath string) map[string]struct{} {
+func reverseDependers(project *project.Project, rootImportPath string) map[string]struct{} {
 	allowed := map[string]struct{}{
 		rootImportPath: {},
 	}

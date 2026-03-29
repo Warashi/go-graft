@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 )
 
 func TestCollectTracksPathAndEnclosingFunction(t *testing.T) {
@@ -25,8 +25,8 @@ func Foo() int {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
 
-	project := &model.Project{
-		Packages: []*model.Package{
+	project := &project.Project{
+		Packages: []*project.Package{
 			{
 				ID:              "p",
 				ImportPath:      "example.com/p",
@@ -100,8 +100,8 @@ func TestTop(t *testing.T) {
 		t.Fatalf("ParseFile(test) error = %v", err)
 	}
 
-	project := &model.Project{
-		Packages: []*model.Package{
+	project := &project.Project{
+		Packages: []*project.Package{
 			{
 				ID:              "p",
 				ImportPath:      "example.com/p",

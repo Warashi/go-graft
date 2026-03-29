@@ -12,13 +12,13 @@ import (
 
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/mutationpoint"
-	"github.com/Warashi/go-graft/internal/projectload"
+	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/testdiscover"
 )
 
 func TestNewSelectorWithOptionsFallsBackToASTWhenRTAAndCHAFail(t *testing.T) {
-	project := &model.Project{
-		Packages: []*model.Package{
+	project := &project.Project{
+		Packages: []*project.Package{
 			{ID: "p", ImportPath: "example.com/p"},
 		},
 	}
@@ -54,7 +54,7 @@ func Entry() int {
 func helper() int { return 1 }
 `)
 
-	project, err := (projectload.Loader{Dir: moduleDir}).Load(context.Background(), "./...")
+	project, err := (project.Loader{Dir: moduleDir}).Load(context.Background(), "./...")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -110,7 +110,7 @@ func TestReachable(t *testing.T) {
 func TestUnrelated(t *testing.T) {}
 `)
 
-	project, err := (projectload.Loader{Dir: moduleDir}).Load(context.Background(), "./...")
+	project, err := (project.Loader{Dir: moduleDir}).Load(context.Background(), "./...")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -156,7 +156,7 @@ func EntryReachable() int { return Touch() }
 func EntryUnrelated() int { return 0 }
 `)
 
-	project, err := (projectload.Loader{Dir: moduleDir}).Load(context.Background(), "./...")
+	project, err := (project.Loader{Dir: moduleDir}).Load(context.Background(), "./...")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -195,7 +195,7 @@ func EntryUnrelated() int { return 0 }
 	}
 }
 
-func findPackageByImportPath(project *model.Project, importPath string) *model.Package {
+func findPackageByImportPath(project *project.Project, importPath string) *project.Package {
 	if project == nil {
 		return nil
 	}

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 )
 
 func TestDiscoverFindsTopLevelTestFunctions(t *testing.T) {
@@ -67,8 +68,8 @@ func TestAlias(x TestParam) {}
 		t.Fatalf("types check error = %v", err)
 	}
 
-	project := &model.Project{
-		Packages: []*model.Package{
+	project := &project.Project{
+		Packages: []*project.Package{
 			{
 				ID:           "sample",
 				ImportPath:   "example.com/sample",
@@ -164,7 +165,7 @@ func TestIncludeWins(t *testing.T) { helper(nil) }
 	}
 }
 
-func parseOneFileProject(t *testing.T, pkgID string, importPath string, filePath string, src string, info *types.Info) *model.Project {
+func parseOneFileProject(t *testing.T, pkgID string, importPath string, filePath string, src string, info *types.Info) *project.Project {
 	t.Helper()
 	filePath = filepath.Clean(filePath)
 	fset := token.NewFileSet()
@@ -172,8 +173,8 @@ func parseOneFileProject(t *testing.T, pkgID string, importPath string, filePath
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
-	return &model.Project{
-		Packages: []*model.Package{
+	return &project.Project{
+		Packages: []*project.Package{
 			{
 				ID:           pkgID,
 				ImportPath:   importPath,

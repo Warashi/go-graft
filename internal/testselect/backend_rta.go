@@ -5,11 +5,12 @@ import (
 	"strings"
 
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 	"golang.org/x/tools/go/callgraph/rta"
 	"golang.org/x/tools/go/ssa"
 )
 
-func newRTABackend(project *model.Project, tests []model.TestRef) (*chaBackend, error) {
+func newRTABackend(project *project.Project, tests []model.TestRef) (*chaBackend, error) {
 	ctx, err := buildSSAContext(project, tests)
 	if err != nil {
 		return nil, err

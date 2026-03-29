@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 )
 
 func TestSelectPrunesByReverseDependencies(t *testing.T) {
-	project := &model.Project{
-		Packages: []*model.Package{
+	project := &project.Project{
+		Packages: []*project.Package{
 			{ID: "a", ImportPath: "example.com/a", Imports: nil},
 			{ID: "b", ImportPath: "example.com/b", Imports: []string{"example.com/a"}},
 			{ID: "c", ImportPath: "example.com/c", Imports: nil},
@@ -53,8 +54,8 @@ func TestUnrelated(t *testing.T) {}
 		t.Fatalf("ParseFile() error = %v", err)
 	}
 
-	project := &model.Project{
-		Packages: []*model.Package{
+	project := &project.Project{
+		Packages: []*project.Package{
 			{
 				ID:           "a",
 				ImportPath:   "example.com/a",
@@ -82,8 +83,8 @@ func TestUnrelated(t *testing.T) {}
 }
 
 func TestSelectReturnsEmptyWhenNoDependentTests(t *testing.T) {
-	project := &model.Project{
-		Packages: []*model.Package{
+	project := &project.Project{
+		Packages: []*project.Package{
 			{ID: "x", ImportPath: "example.com/x"},
 		},
 	}

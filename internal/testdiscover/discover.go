@@ -11,6 +11,7 @@ import (
 
 	"github.com/Warashi/go-graft/internal/callresolve"
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 )
 
 const (
@@ -54,11 +55,11 @@ type functionRecord struct {
 	body          *ast.BlockStmt
 }
 
-func Discover(project *model.Project) []model.TestRef {
+func Discover(project *project.Project) []model.TestRef {
 	return DiscoverDetailed(project).Included
 }
 
-func DiscoverDetailed(project *model.Project) Result {
+func DiscoverDetailed(project *project.Project) Result {
 	if project == nil {
 		return Result{}
 	}
@@ -120,7 +121,7 @@ func DiscoverDetailed(project *model.Project) Result {
 	return out
 }
 
-func collectFunctions(project *model.Project) (map[functionKey]*functionInfo, []functionRecord) {
+func collectFunctions(project *project.Project) (map[functionKey]*functionInfo, []functionRecord) {
 	if project == nil {
 		return nil, nil
 	}
@@ -158,7 +159,7 @@ func collectFunctions(project *model.Project) (map[functionKey]*functionInfo, []
 	return infos, records
 }
 
-func buildCalls(project *model.Project, infos map[functionKey]*functionInfo, records []functionRecord) {
+func buildCalls(project *project.Project, infos map[functionKey]*functionInfo, records []functionRecord) {
 	if len(infos) == 0 || len(records) == 0 {
 		return
 	}

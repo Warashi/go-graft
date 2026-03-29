@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/ssa"
@@ -27,7 +28,7 @@ type functionDeclKey struct {
 	name     string
 }
 
-func newCHABackend(project *model.Project, tests []model.TestRef) (*chaBackend, error) {
+func newCHABackend(project *project.Project, tests []model.TestRef) (*chaBackend, error) {
 	ctx, err := buildSSAContext(project, tests)
 	if err != nil {
 		return nil, err

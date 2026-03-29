@@ -1,4 +1,4 @@
-package projectload
+package project
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Warashi/go-graft/internal/model"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -16,7 +15,7 @@ type Loader struct {
 	Dir string
 }
 
-func (l Loader) Load(ctx context.Context, patterns ...string) (*model.Project, error) {
+func (l Loader) Load(ctx context.Context, patterns ...string) (*Project, error) {
 	if len(patterns) == 0 {
 		patterns = []string{"./..."}
 	}
@@ -43,9 +42,9 @@ func (l Loader) Load(ctx context.Context, patterns ...string) (*model.Project, e
 		return nil, err
 	}
 
-	project := &model.Project{
-		ByID:         make(map[string]*model.Package, len(loaded)),
-		ByImportPath: make(map[string]*model.Package, len(loaded)),
+	project := &Project{
+		ByID:         make(map[string]*Package, len(loaded)),
+		ByImportPath: make(map[string]*Package, len(loaded)),
 	}
 
 	for _, pkg := range loaded {
@@ -66,7 +65,7 @@ func (l Loader) Load(ctx context.Context, patterns ...string) (*model.Project, e
 	return project, nil
 }
 
-func buildPackage(pkg *packages.Package) *model.Package {
+func buildPackage(pkg *packages.Package) *Package {
 	goFiles := cleanAbsPaths(pkg.GoFiles, pkg.Dir)
 	compiledGoFiles := cleanAbsPaths(pkg.CompiledGoFiles, pkg.Dir)
 	if len(goFiles) == 0 && len(compiledGoFiles) == 0 {
@@ -102,7 +101,7 @@ func buildPackage(pkg *packages.Package) *model.Package {
 		importPath = pkg.ID
 	}
 
-	return &model.Package{
+	return &Package{
 		ID:              pkg.ID,
 		ImportPath:      importPath,
 		Dir:             pkg.Dir,

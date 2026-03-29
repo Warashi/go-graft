@@ -10,7 +10,7 @@ import (
 	"github.com/Warashi/go-graft/internal/astcow"
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/mutantbuild"
-	"github.com/Warashi/go-graft/internal/projectload"
+	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/runner"
 	"github.com/Warashi/go-graft/internal/testdiscover"
 	"github.com/Warashi/go-graft/internal/testselect"
@@ -20,7 +20,7 @@ var errUnsupportedMutationNodeType = errors.New("unsupported mutation node type"
 
 type runPreparation struct {
 	workDir  string
-	project  *model.Project
+	project  *project.Project
 	selector *testselect.Selector
 }
 
@@ -30,7 +30,7 @@ func (e *Engine) loadProjectAndSelector(runCtx context.Context, patterns ...stri
 		return runPreparation{}, err
 	}
 
-	project, err := (projectload.Loader{Dir: workDir}).Load(runCtx, patterns...)
+	project, err := (project.Loader{Dir: workDir}).Load(runCtx, patterns...)
 	if err != nil {
 		return runPreparation{}, err
 	}
@@ -53,7 +53,7 @@ func (e *Engine) loadProjectAndSelector(runCtx context.Context, patterns ...stri
 	}, nil
 }
 
-func (e *Engine) buildMutants(workDir string, project *model.Project, selector *testselect.Selector, registry ruleRegistry, points []model.MutationPoint) ([]model.MutantExecResult, []model.Mutant) {
+func (e *Engine) buildMutants(workDir string, project *project.Project, selector *testselect.Selector, registry ruleRegistry, points []model.MutationPoint) ([]model.MutantExecResult, []model.Mutant) {
 	builder := mutantbuild.Builder{BaseTempDir: e.Config.BaseTempDir}
 	baseResults := make([]model.MutantExecResult, 0)
 	runMutants := make([]model.Mutant, 0)
@@ -122,7 +122,7 @@ func (e *Engine) runMutants(runCtx context.Context, runMutants []model.Mutant) [
 	}.Run(runCtx, runMutants)
 }
 
-func newMutationContext(pkg *model.Package, point model.MutationPoint) *Context {
+func newMutationContext(pkg *project.Package, point model.MutationPoint) *Context {
 	callbackCtx := newContext()
 	if pkg != nil {
 		callbackCtx.Fset = pkg.Fset

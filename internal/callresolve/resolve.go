@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 )
 
 // FunctionKey identifies one top-level function in one package.
@@ -48,7 +48,7 @@ func ImportAliases(file *ast.File) map[string]string {
 }
 
 // BuildByImport builds importPath -> sorted package IDs.
-func BuildByImport(project *model.Project) map[string][]string {
+func BuildByImport(project *project.Project) map[string][]string {
 	byImport := make(map[string][]string)
 	if project == nil {
 		return byImport

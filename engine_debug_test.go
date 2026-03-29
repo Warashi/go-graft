@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/testdiscover"
 	"github.com/Warashi/go-graft/internal/testselect"
 )
@@ -61,8 +62,8 @@ func TestWriteExcludedMutationTestsDebug(t *testing.T) {
 }
 
 func TestWriteTestSelectionCallGraphDebug(t *testing.T) {
-	project := &model.Project{
-		Packages: []*model.Package{
+	project := &project.Project{
+		Packages: []*project.Package{
 			{
 				ID:         "p",
 				ImportPath: "example.com/p",

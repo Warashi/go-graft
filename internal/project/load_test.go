@@ -1,4 +1,4 @@
-package projectload
+package project
 
 import (
 	"context"

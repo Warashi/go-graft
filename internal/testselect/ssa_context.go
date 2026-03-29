@@ -5,6 +5,7 @@ import (
 	"go/token"
 
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
@@ -19,7 +20,7 @@ type ssaContext struct {
 	fsetByPkg     map[string]*token.FileSet
 }
 
-func buildSSAContext(project *model.Project, tests []model.TestRef) (*ssaContext, error) {
+func buildSSAContext(project *project.Project, tests []model.TestRef) (*ssaContext, error) {
 	if project == nil {
 		return nil, fmt.Errorf("project is nil")
 	}

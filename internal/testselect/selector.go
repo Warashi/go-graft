@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 )
 
 // CallGraphMode controls call graph backend selection in test selector internals.
@@ -26,7 +27,7 @@ type selectorBackend interface {
 	candidateTests(point model.MutationPoint) []model.TestRef
 }
 
-func NewSelectorWithOptions(project *model.Project, tests []model.TestRef, opts SelectorOptions) *Selector {
+func NewSelectorWithOptions(project *project.Project, tests []model.TestRef, opts SelectorOptions) *Selector {
 	mode := opts.CallGraphMode.withDefault()
 	out := &Selector{
 		project: project,
@@ -91,7 +92,7 @@ func backendBuildOrder(mode CallGraphMode) []string {
 	}
 }
 
-func buildBackend(kind string, project *model.Project, tests []model.TestRef) (selectorBackend, error) {
+func buildBackend(kind string, project *project.Project, tests []model.TestRef) (selectorBackend, error) {
 	switch kind {
 	case "rta":
 		return newRTABackend(project, tests)
@@ -109,7 +110,7 @@ type astBackend struct {
 	astCallersBack map[functionKey][]functionKey
 }
 
-func newASTBackend(project *model.Project, tests []model.TestRef) *astBackend {
+func newASTBackend(project *project.Project, tests []model.TestRef) *astBackend {
 	return &astBackend{
 		tests:          append([]model.TestRef(nil), tests...),
 		astCallersBack: buildReverseCallers(project),

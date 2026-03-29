@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"github.com/Warashi/go-graft/internal/model"
+	"github.com/Warashi/go-graft/internal/project"
 )
 
-func Collect(project *model.Project, targetTypes []reflect.Type) []model.MutationPoint {
+func Collect(project *project.Project, targetTypes []reflect.Type) []model.MutationPoint {
 	if project == nil || len(targetTypes) == 0 {
 		return nil
 	}
@@ -82,7 +83,7 @@ func Collect(project *model.Project, targetTypes []reflect.Type) []model.Mutatio
 	return points
 }
 
-func resolveCompiledFile(pkg *model.Package, filePath string) string {
+func resolveCompiledFile(pkg *project.Package, filePath string) string {
 	base := filepath.Base(filePath)
 	for _, compiled := range pkg.CompiledGoFiles {
 		if filepath.Base(compiled) == base {
