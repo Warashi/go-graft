@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Warashi/go-graft/internal/execution"
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/mutation"
 	"github.com/Warashi/go-graft/internal/project"
-	"github.com/Warashi/go-graft/internal/reporting"
 	"github.com/Warashi/go-graft/internal/rule"
 	"github.com/Warashi/go-graft/internal/selection"
 )
@@ -87,7 +87,7 @@ func composeReport(results []model.MutantExecResult) *Report {
 	report := &Report{
 		Mutants: make([]MutantResult, 0, len(results)),
 	}
-	summary := reporting.Summarize(results)
+	summary := execution.Summarize(results)
 	report.Total = summary.Total
 	report.Killed = summary.Killed
 	report.Survived = summary.Survived

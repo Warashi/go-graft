@@ -1,4 +1,4 @@
-package reporting
+package execution
 
 import "github.com/Warashi/go-graft/internal/model"
 

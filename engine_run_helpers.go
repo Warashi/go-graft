@@ -8,11 +8,11 @@ import (
 	"strconv"
 
 	"github.com/Warashi/go-graft/internal/astclone"
+	"github.com/Warashi/go-graft/internal/execution"
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/mutation"
 	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/rule"
-	"github.com/Warashi/go-graft/internal/runner"
 	"github.com/Warashi/go-graft/internal/selection"
 )
 
@@ -117,7 +117,7 @@ func (e *Engine) buildMutants(workDir string, project *project.Project, selector
 }
 
 func (e *Engine) runMutants(runCtx context.Context, runMutants []model.Mutant) []model.MutantExecResult {
-	return runner.Runner{
+	return execution.Runner{
 		Workers:       e.Config.Workers,
 		MutantTimeout: e.Config.MutantTimeout,
 		KeepTemp:      e.Config.KeepTemp,
