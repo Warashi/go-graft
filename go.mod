@@ -1,6 +1,6 @@
 module github.com/Warashi/go-graft
 
-go 1.26.0
+go 1.26.1
 
 require golang.org/x/tools v0.43.0
 
