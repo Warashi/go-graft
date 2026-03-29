@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/Warashi/go-graft/internal/model"
-	"github.com/Warashi/go-graft/internal/mutationpoint"
+	"github.com/Warashi/go-graft/internal/mutation"
 	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/reporting"
 	"github.com/Warashi/go-graft/internal/rule"
@@ -47,7 +47,7 @@ func (e *Engine) Run(runCtx context.Context, patterns ...string) (*Report, error
 	if err != nil {
 		return nil, err
 	}
-	points := mutationpoint.Collect(prepared.project, registry.TargetTypes())
+	points := mutation.Collect(prepared.project, registry.TargetTypes())
 	baseResults, runMutants := e.buildMutants(prepared.workDir, prepared.project, prepared.selector, registry, points)
 	runResults := e.runMutants(runCtx, runMutants)
 	return composeReport(append(baseResults, runResults...)), nil

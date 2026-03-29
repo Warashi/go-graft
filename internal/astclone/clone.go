@@ -1,4 +1,4 @@
-package astcow
+package astclone
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"go/ast"
 )
 
-var ErrUnsupportedNode = errors.New("astcow: unsupported node type")
+var ErrUnsupportedNode = errors.New("astclone: unsupported node type")
 
 // ShallowCopyNode returns a one-level copy for supported node types.
 func ShallowCopyNode(n ast.Node) ast.Node {
@@ -16,7 +16,7 @@ func ShallowCopyNode(n ast.Node) ast.Node {
 // DeepCopyNode returns a deep copy of n and clone-to-original mapping.
 func DeepCopyNode(n ast.Node) (ast.Node, map[ast.Node]ast.Node, error) {
 	if n == nil {
-		return nil, nil, errors.New("astcow: node must not be nil")
+		return nil, nil, errors.New("astclone: node must not be nil")
 	}
 
 	cloneToOriginal := make(map[ast.Node]ast.Node)
@@ -48,11 +48,11 @@ func DeepCopyNode(n ast.Node) (ast.Node, map[ast.Node]ast.Node, error) {
 		parentOrig := stack[len(stack)-1]
 		parentClone, ok := originalToClone[parentOrig]
 		if !ok {
-			walkErr = fmt.Errorf("astcow: missing parent clone for %T", parentOrig)
+			walkErr = fmt.Errorf("astclone: missing parent clone for %T", parentOrig)
 			return false
 		}
 		if !replaceChild(parentClone, current, cloned) {
-			walkErr = fmt.Errorf("astcow: failed to replace child %T in %T", current, parentOrig)
+			walkErr = fmt.Errorf("astclone: failed to replace child %T in %T", current, parentOrig)
 			return false
 		}
 		return !seen
@@ -62,7 +62,7 @@ func DeepCopyNode(n ast.Node) (ast.Node, map[ast.Node]ast.Node, error) {
 		return nil, nil, walkErr
 	}
 	if rootClone == nil {
-		return nil, nil, errors.New("astcow: failed to clone root")
+		return nil, nil, errors.New("astclone: failed to clone root")
 	}
 	return rootClone, cloneToOriginal, nil
 }
@@ -70,10 +70,10 @@ func DeepCopyNode(n ast.Node) (ast.Node, map[ast.Node]ast.Node, error) {
 // ClonePath applies one-node mutation with copy-on-write on the given path.
 func ClonePath(pathOrig []ast.Node, nodeOrig ast.Node, nodeMut ast.Node) (*ast.File, map[ast.Node]ast.Node, error) {
 	if len(pathOrig) == 0 {
-		return nil, nil, errors.New("astcow: empty path")
+		return nil, nil, errors.New("astclone: empty path")
 	}
 	if nodeOrig == nil || nodeMut == nil {
-		return nil, nil, errors.New("astcow: nodeOrig and nodeMut must not be nil")
+		return nil, nil, errors.New("astclone: nodeOrig and nodeMut must not be nil")
 	}
 
 	cloneMap := map[ast.Node]ast.Node{
@@ -90,7 +90,7 @@ func ClonePath(pathOrig []ast.Node, nodeOrig ast.Node, nodeMut ast.Node) (*ast.F
 		}
 		cloneMap[parentClone] = parentOrig
 		if !replaceChild(parentClone, childOrig, childClone) {
-			return nil, nil, fmt.Errorf("astcow: failed to replace child %T in %T", childOrig, parentOrig)
+			return nil, nil, fmt.Errorf("astclone: failed to replace child %T in %T", childOrig, parentOrig)
 		}
 		childOrig = parentOrig
 		childClone = parentClone
@@ -98,7 +98,7 @@ func ClonePath(pathOrig []ast.Node, nodeOrig ast.Node, nodeMut ast.Node) (*ast.F
 
 	file, ok := childClone.(*ast.File)
 	if !ok {
-		return nil, nil, fmt.Errorf("astcow: root clone type %T, want *ast.File", childClone)
+		return nil, nil, fmt.Errorf("astclone: root clone type %T, want *ast.File", childClone)
 	}
 	return file, cloneMap, nil
 }

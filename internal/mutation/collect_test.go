@@ -1,4 +1,4 @@
-package mutationpoint
+package mutation
 
 import (
 	"go/ast"

@@ -7,9 +7,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/Warashi/go-graft/internal/astcow"
+	"github.com/Warashi/go-graft/internal/astclone"
 	"github.com/Warashi/go-graft/internal/model"
-	"github.com/Warashi/go-graft/internal/mutantbuild"
+	"github.com/Warashi/go-graft/internal/mutation"
 	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/rule"
 	"github.com/Warashi/go-graft/internal/runner"
@@ -54,7 +54,7 @@ func (e *Engine) loadProjectAndSelector(runCtx context.Context, patterns ...stri
 }
 
 func (e *Engine) buildMutants(workDir string, project *project.Project, selector *selection.Selector, registry rule.Snapshot, points []model.MutationPoint) ([]model.MutantExecResult, []model.Mutant) {
-	builder := mutantbuild.Builder{BaseTempDir: e.Config.BaseTempDir}
+	builder := mutation.Builder{BaseTempDir: e.Config.BaseTempDir}
 	baseResults := make([]model.MutantExecResult, 0)
 	runMutants := make([]model.Mutant, 0)
 	mutantSeq := 1
@@ -87,7 +87,7 @@ func (e *Engine) buildMutants(workDir string, project *project.Project, selector
 				continue
 			}
 
-			fileMut, cloneMap, err := astcow.ClonePath(point.Path, point.Node, mutatedNode)
+			fileMut, cloneMap, err := astclone.ClonePath(point.Path, point.Node, mutatedNode)
 			if err != nil {
 				appendImmediateErrored(&baseResults, mutantID, ruleDef.Name, point, err.Error())
 				continue
@@ -96,7 +96,7 @@ func (e *Engine) buildMutants(workDir string, project *project.Project, selector
 				callbackCtx.SetOriginal(clone, original)
 			}
 
-			mutant, err := builder.Build(mutantbuild.Input{
+			mutant, err := builder.Build(mutation.Input{
 				ID:         mutantID,
 				RuleName:   ruleDef.Name,
 				Point:      point,
@@ -138,7 +138,7 @@ func newMutationContext(pkg *project.Package, point model.MutationPoint) *Contex
 
 func prepareRuleInput(def rule.Definition, point model.MutationPoint, callbackCtx *Context) (ast.Node, error) {
 	if def.DeepCopy {
-		deepCopied, cloneMap, err := astcow.DeepCopyNode(point.Node)
+		deepCopied, cloneMap, err := astclone.DeepCopyNode(point.Node)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +148,7 @@ func prepareRuleInput(def rule.Definition, point model.MutationPoint, callbackCt
 		return deepCopied, nil
 	}
 
-	nodeInput := astcow.ShallowCopyNode(point.Node)
+	nodeInput := astclone.ShallowCopyNode(point.Node)
 	if nodeInput == nil {
 		return nil, errUnsupportedMutationNodeType
 	}

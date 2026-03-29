@@ -1,4 +1,4 @@
-package astcow
+package astclone
 
 import (
 	"fmt"
@@ -37,11 +37,11 @@ func TestGeneratedCopyReplaceIsUpToDate(t *testing.T) {
 	t.Parallel()
 
 	tempFile := filepath.Join(t.TempDir(), "copy_replace.go")
-	cmd := exec.Command("go", "run", "./cmd/astcowgen", "-out", tempFile)
+	cmd := exec.Command("go", "run", "./cmd/astclonegen", "-out", tempFile)
 	cmd.Dir = "."
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("go run ./cmd/astcowgen failed: %v\n%s", err, string(output))
+		t.Fatalf("go run ./cmd/astclonegen failed: %v\n%s", err, string(output))
 	}
 
 	want, err := os.ReadFile("copy_replace.go")
@@ -54,7 +54,7 @@ func TestGeneratedCopyReplaceIsUpToDate(t *testing.T) {
 	}
 
 	if string(got) != string(want) {
-		t.Fatal("generated copy_replace.go is stale; run `go generate ./internal/astcow`")
+		t.Fatal("generated copy_replace.go is stale; run `go generate ./internal/astclone`")
 	}
 }
 

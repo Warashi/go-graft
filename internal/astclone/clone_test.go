@@ -1,4 +1,4 @@
-package astcow
+package astclone
 
 import (
 	"errors"

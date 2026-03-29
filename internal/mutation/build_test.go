@@ -1,4 +1,4 @@
-package mutantbuild
+package mutation
 
 import (
 	"encoding/json"
