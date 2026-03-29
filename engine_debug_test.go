@@ -7,8 +7,7 @@ import (
 
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/project"
-	"github.com/Warashi/go-graft/internal/testdiscover"
-	"github.com/Warashi/go-graft/internal/testselect"
+	"github.com/Warashi/go-graft/internal/selection"
 )
 
 func TestDebugEnabled(t *testing.T) {
@@ -34,20 +33,20 @@ func TestDebugEnabled(t *testing.T) {
 }
 
 func TestWriteExcludedMutationTestsDebug(t *testing.T) {
-	excluded := []testdiscover.ExcludedTest{
+	excluded := []selection.ExcludedTest{
 		{
 			Ref: model.TestRef{
 				ImportPath: "example.com/b",
 				Name:       "TestB",
 			},
-			Reason: testdiscover.ExcludeReasonDirectiveExclude,
+			Reason: selection.ExcludeReasonDirectiveExclude,
 		},
 		{
 			Ref: model.TestRef{
 				ImportPath: "example.com/a",
 				Name:       "TestA",
 			},
-			Reason: testdiscover.ExcludeReasonAutoRunReachable,
+			Reason: selection.ExcludeReasonAutoRunReachable,
 		},
 	}
 
@@ -77,8 +76,8 @@ func TestWriteTestSelectionCallGraphDebug(t *testing.T) {
 			Name:       "TestP",
 		},
 	}
-	selector := testselect.NewSelectorWithOptions(project, tests, testselect.SelectorOptions{
-		CallGraphMode: testselect.CallGraphModeRTA,
+	selector := selection.NewSelectorWithOptions(project, tests, selection.SelectorOptions{
+		CallGraphMode: selection.CallGraphModeRTA,
 	})
 
 	var buf bytes.Buffer

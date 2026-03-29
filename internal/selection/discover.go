@@ -1,4 +1,4 @@
-package testdiscover
+package selection
 
 import (
 	"go/ast"
@@ -9,7 +9,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/Warashi/go-graft/internal/callresolve"
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/project"
 )
@@ -27,11 +26,6 @@ type ExcludedTest struct {
 type Result struct {
 	Included []model.TestRef
 	Excluded []ExcludedTest
-}
-
-type functionKey struct {
-	pkgID string
-	name  string
 }
 
 type directive int
@@ -136,7 +130,7 @@ func collectFunctions(project *project.Project) (map[functionKey]*functionInfo, 
 			if file == nil {
 				continue
 			}
-			aliases := callresolve.ImportAliases(file)
+			aliases := ImportAliases(file)
 			for _, decl := range file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if !ok || fn.Name == nil || fn.Body == nil {
@@ -163,7 +157,7 @@ func buildCalls(project *project.Project, infos map[functionKey]*functionInfo, r
 	if len(infos) == 0 || len(records) == 0 {
 		return
 	}
-	byImport := callresolve.BuildByImport(project)
+	byImport := BuildByImport(project)
 
 	for _, rec := range records {
 		info := infos[rec.key]
@@ -251,7 +245,7 @@ func hasDirective(group *ast.CommentGroup, token string) bool {
 }
 
 func resolveCallTarget(currentPkgID string, call *ast.CallExpr, info *types.Info, aliases map[string]string, byImport map[string][]string, infos map[functionKey]*functionInfo) (functionKey, bool) {
-	resolved, ok := callresolve.ResolveFunctionCall(currentPkgID, call, info, aliases, byImport, func(key callresolve.FunctionKey) bool {
+	resolved, ok := ResolveFunctionCall(currentPkgID, call, info, aliases, byImport, func(key FunctionKey) bool {
 		_, ok := infos[functionKey{pkgID: key.PkgID, name: key.Name}]
 		return ok
 	})

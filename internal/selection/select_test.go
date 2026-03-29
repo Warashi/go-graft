@@ -1,4 +1,4 @@
-package testselect
+package selection
 
 import (
 	"go/ast"

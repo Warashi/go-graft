@@ -1,4 +1,4 @@
-package callresolve
+package selection
 
 import (
 	"go/ast"

@@ -14,8 +14,7 @@ import (
 	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/reporting"
 	"github.com/Warashi/go-graft/internal/rule"
-	"github.com/Warashi/go-graft/internal/testdiscover"
-	"github.com/Warashi/go-graft/internal/testselect"
+	"github.com/Warashi/go-graft/internal/selection"
 )
 
 // Engine is the mutation test framework entry point.
@@ -156,25 +155,25 @@ func debugEnabled() bool {
 	}
 }
 
-func mapCallGraphMode(mode TestSelectionCallGraphMode) testselect.CallGraphMode {
+func mapCallGraphMode(mode TestSelectionCallGraphMode) selection.CallGraphMode {
 	switch mode.withDefault() {
 	case TestSelectionCallGraphRTA:
-		return testselect.CallGraphModeRTA
+		return selection.CallGraphModeRTA
 	case TestSelectionCallGraphCHA:
-		return testselect.CallGraphModeCHA
+		return selection.CallGraphModeCHA
 	case TestSelectionCallGraphAST:
-		return testselect.CallGraphModeAST
+		return selection.CallGraphModeAST
 	default:
-		return testselect.CallGraphModeAuto
+		return selection.CallGraphModeAuto
 	}
 }
 
-func writeExcludedMutationTestsDebug(w io.Writer, excluded []testdiscover.ExcludedTest) {
+func writeExcludedMutationTestsDebug(w io.Writer, excluded []selection.ExcludedTest) {
 	if w == nil || len(excluded) == 0 {
 		return
 	}
-	items := append([]testdiscover.ExcludedTest(nil), excluded...)
-	slices.SortFunc(items, func(a testdiscover.ExcludedTest, b testdiscover.ExcludedTest) int {
+	items := append([]selection.ExcludedTest(nil), excluded...)
+	slices.SortFunc(items, func(a selection.ExcludedTest, b selection.ExcludedTest) int {
 		if cmp := compareStrings(a.Ref.ImportPath, b.Ref.ImportPath); cmp != 0 {
 			return cmp
 		}
@@ -188,7 +187,7 @@ func writeExcludedMutationTestsDebug(w io.Writer, excluded []testdiscover.Exclud
 	}
 }
 
-func writeTestSelectionCallGraphDebug(w io.Writer, selector *testselect.Selector) {
+func writeTestSelectionCallGraphDebug(w io.Writer, selector *selection.Selector) {
 	if w == nil || selector == nil {
 		return
 	}

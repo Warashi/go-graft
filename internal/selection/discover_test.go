@@ -1,4 +1,4 @@
-package testdiscover
+package selection
 
 import (
 	"go/ast"

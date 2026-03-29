@@ -13,8 +13,7 @@ import (
 	"github.com/Warashi/go-graft/internal/project"
 	"github.com/Warashi/go-graft/internal/rule"
 	"github.com/Warashi/go-graft/internal/runner"
-	"github.com/Warashi/go-graft/internal/testdiscover"
-	"github.com/Warashi/go-graft/internal/testselect"
+	"github.com/Warashi/go-graft/internal/selection"
 )
 
 var errUnsupportedMutationNodeType = errors.New("unsupported mutation node type")
@@ -22,7 +21,7 @@ var errUnsupportedMutationNodeType = errors.New("unsupported mutation node type"
 type runPreparation struct {
 	workDir  string
 	project  *project.Project
-	selector *testselect.Selector
+	selector *selection.Selector
 }
 
 func (e *Engine) loadProjectAndSelector(runCtx context.Context, patterns ...string) (runPreparation, error) {
@@ -35,12 +34,12 @@ func (e *Engine) loadProjectAndSelector(runCtx context.Context, patterns ...stri
 	if err != nil {
 		return runPreparation{}, err
 	}
-	discovered := testdiscover.DiscoverDetailed(project)
+	discovered := selection.DiscoverDetailed(project)
 	if debugEnabled() {
 		writeExcludedMutationTestsDebug(os.Stderr, discovered.Excluded)
 	}
 	tests := discovered.Included
-	selector := testselect.NewSelectorWithOptions(project, tests, testselect.SelectorOptions{
+	selector := selection.NewSelectorWithOptions(project, tests, selection.SelectorOptions{
 		CallGraphMode: mapCallGraphMode(e.Config.TestSelectionCallGraph),
 	})
 	if debugEnabled() {
@@ -54,7 +53,7 @@ func (e *Engine) loadProjectAndSelector(runCtx context.Context, patterns ...stri
 	}, nil
 }
 
-func (e *Engine) buildMutants(workDir string, project *project.Project, selector *testselect.Selector, registry rule.Snapshot, points []model.MutationPoint) ([]model.MutantExecResult, []model.Mutant) {
+func (e *Engine) buildMutants(workDir string, project *project.Project, selector *selection.Selector, registry rule.Snapshot, points []model.MutationPoint) ([]model.MutantExecResult, []model.Mutant) {
 	builder := mutantbuild.Builder{BaseTempDir: e.Config.BaseTempDir}
 	baseResults := make([]model.MutantExecResult, 0)
 	runMutants := make([]model.Mutant, 0)

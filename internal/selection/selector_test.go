@@ -1,4 +1,4 @@
-package testselect
+package selection
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/mutationpoint"
 	"github.com/Warashi/go-graft/internal/project"
-	"github.com/Warashi/go-graft/internal/testdiscover"
 )
 
 func TestNewSelectorWithOptionsFallsBackToASTWhenRTAAndCHAFail(t *testing.T) {
@@ -114,7 +113,7 @@ func TestUnrelated(t *testing.T) {}
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	tests := testdiscover.Discover(project)
+	tests := Discover(project)
 	points := mutationpoint.Collect(project, []reflect.Type{reflect.TypeFor[*ast.BasicLit]()})
 	point, ok := findPointInFunc(points, "Do")
 	if !ok {

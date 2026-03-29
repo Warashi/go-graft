@@ -1,18 +1,12 @@
-package testselect
+package selection
 
 import (
 	"go/ast"
 	"slices"
 
-	"github.com/Warashi/go-graft/internal/callresolve"
 	"github.com/Warashi/go-graft/internal/model"
 	"github.com/Warashi/go-graft/internal/project"
 )
-
-type functionKey struct {
-	pkgID string
-	name  string
-}
 
 // Selector picks tests for mutation points in one loaded project.
 type Selector struct {
@@ -123,7 +117,7 @@ func buildReverseCallers(project *project.Project) map[functionKey][]functionKey
 				importAliases[pkg.ID] = map[string]string{}
 			}
 			aliasMap := importAliases[pkg.ID]
-			for alias, importPath := range callresolve.ImportAliases(file) {
+			for alias, importPath := range ImportAliases(file) {
 				aliasMap[alias] = importPath
 			}
 			for _, decl := range file.Decls {
@@ -136,7 +130,7 @@ func buildReverseCallers(project *project.Project) map[functionKey][]functionKey
 		}
 	}
 
-	byImport := callresolve.BuildByImport(project)
+	byImport := BuildByImport(project)
 
 	reverse := make(map[functionKey][]functionKey)
 	for caller, body := range funcBodies {
@@ -158,7 +152,7 @@ func buildReverseCallers(project *project.Project) map[functionKey][]functionKey
 }
 
 func resolveCall(currentPkgID string, call *ast.CallExpr, aliases map[string]string, byImport map[string][]string) (functionKey, bool) {
-	resolved, ok := callresolve.ResolveFunctionCall(currentPkgID, call, nil, aliases, byImport, nil)
+	resolved, ok := ResolveFunctionCall(currentPkgID, call, nil, aliases, byImport, nil)
 	if !ok {
 		return functionKey{}, false
 	}
