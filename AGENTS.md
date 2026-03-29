@@ -11,10 +11,12 @@ Do not place user-level global preferences or rules for other projects here.
 
 ## Source-of-Truth References
 
-- Public API, defaults, and behavior contracts: `docs/design.md` (Section 2).
-- Execution pipeline and module responsibilities: `docs/design.md` (Sections 3 and 4).
-- Status semantics and reliability boundaries: `docs/design.md` (Section 5).
-- Current limitations and debug notes: `docs/design.md` (Sections 6 and 7).
+- Public API, defaults, and behavior contracts: `docs/public-api.md`.
+- Architecture and feature boundaries: `docs/architecture.md`.
+- Rule registration and callback semantics: `docs/rule.md`.
+- Test discovery and selection semantics: `docs/selection.md`.
+- Mutation collection and overlay building: `docs/mutation.md`.
+- Status semantics and runtime execution boundaries: `docs/execution.md`.
 
 ## Standard Development Checks
 

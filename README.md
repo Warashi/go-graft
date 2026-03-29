@@ -52,14 +52,14 @@ func main() {
 Each mutant is classified into one status.
 For exact definitions and scoring semantics, see:
 
-- [Detailed design: Report model](docs/design.md#25-report-model)
-- [Detailed design: Reliability and status semantics](docs/design.md#5-reliability-and-status-semantics)
+- [Execution semantics](docs/execution.md)
+- [Public API report model](docs/public-api.md)
 
 ## Public API surface
 
 Use these references as the canonical API definitions:
 
-- [Detailed design: Public API](docs/design.md#2-public-api)
+- [Public API](docs/public-api.md)
 - `go doc -all github.com/Warashi/go-graft`
 
 ## Compatibility policy
@@ -75,7 +75,7 @@ It allows running mutants without modifying your original source files.
 
 ### Why are some mutants marked `Unsupported`?
 
-See [Detailed design: Reliability and status semantics](docs/design.md#5-reliability-and-status-semantics).
+See [Execution semantics](docs/execution.md).
 
 ### How do I debug mutant execution?
 
@@ -83,14 +83,17 @@ Set `Config{KeepTemp: true}` and inspect temporary mutant directories and comman
 
 ### How is the test-selection call graph chosen?
 
-See [Detailed design: `internal/testselect`](docs/design.md#46-internaltestselect) for backend selection and fallback behavior.
+See [Selection behavior](docs/selection.md) for backend selection and fallback behavior.
 
 ## Design docs
 
 - [Documentation ownership map](docs/documentation-map.md)
-- [Current architecture summary](docs/design-summary.md)
-- [Current test selection strategy](docs/design-pruning-summary.md)
-- [Current detailed design](docs/design.md)
+- [Architecture](docs/architecture.md)
+- [Public API](docs/public-api.md)
+- [Rule feature](docs/rule.md)
+- [Selection feature](docs/selection.md)
+- [Mutation feature](docs/mutation.md)
+- [Execution feature](docs/execution.md)
 
 ## Contributing and security
 

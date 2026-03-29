@@ -8,7 +8,7 @@ This document covers contribution workflow only.
 For product behavior and architecture references, use:
 
 - `README.md`
-- `docs/design.md`
+- `docs/architecture.md`
 - `docs/documentation-map.md`
 
 ## Development setup
